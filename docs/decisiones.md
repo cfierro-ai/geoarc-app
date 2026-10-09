@@ -131,3 +131,16 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
 - Si Copernicus falla, la app carga Terrarium sola, cambia el selector a Terrarium y avisa en el panel
   («Copernicus no disponible; se usó Terrarium»). Si Terrarium también falla, se informa el error de ambas fuentes.
 - Copernicus queda en el selector para cuando exista un proxy (pendiente en el backlog).
+
+## 2026-10-09 · Riesgo del redibujo bajo demanda en la vista 3D (Chris)
+
+- Hallazgo: con los planos de rasante desactivados, la vista 3D quedaba **congelada**. Seguía mostrando los planos y no
+  mostraba el resaltado del lado. Había dos causas:
+  1. El resaltado cambia colores del `InstancedMesh` en un efecto, fuera de las props de React. No pedía cuadro.
+  2. **R3F 9.8.1 no pide cuadro al desmontar objetos**: `removeChild` anula `child.parent` y luego llama a
+     `invalidateInstance(child)`, que retorna de inmediato si no hay `parent`. Desactivar los planos, borrar el lote
+     o perder la envolvente no redibujaban.
+- Corrección en `Scene3D.tsx`: `invalidate()` en el efecto de matrices y colores del `InstancedMesh` y en `CameraFit`,
+  más `RedrawOnUpdate`, que pide un cuadro tras cada actualización de la escena (incluye desmontajes y cambio de vista).
+- Prueba: `e2e/resaltado.spec.ts` lee el buffer del canvas. Exige que desactivar los planos cambie el cuadro y que,
+  al resaltar el lado 2, los píxeles verdes del lado 4 caigan (medido: 4.482 → 6). Falló antes de la corrección.

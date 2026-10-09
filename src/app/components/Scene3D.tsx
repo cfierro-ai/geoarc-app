@@ -133,6 +133,7 @@ function LotOutline({ lot, dem, zRef, ex }: { lot: XY[]; dem: HeightGrid; zRef: 
 
 function EnvelopeBlocks({ env, zRef, ex, selectedEdge }: { env: EnvelopeResult; zRef: number; ex: number; selectedEdge: number | null }) {
   const ref = useRef<THREE.InstancedMesh>(null)
+  const invalidate = useThree((s) => s.invalidate)
   const cells = useMemo(() => {
     const out: number[] = []
     for (let k = 0; k < env.rel.length; k++) if (env.rel[k] > 0.01) out.push(k)
@@ -160,7 +161,9 @@ function EnvelopeBlocks({ env, zRef, ex, selectedEdge }: { env: EnvelopeResult; 
     mesh.instanceMatrix.needsUpdate = true
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
     mesh.computeBoundingSphere()
-  }, [cells, env, zRef, ex, selectedEdge])
+    // matrices y colores cambian fuera de las props de React: con frameloop 'demand' hay que pedir el cuadro
+    invalidate()
+  }, [cells, env, zRef, ex, selectedEdge, invalidate])
   return (
     <instancedMesh key={cells.length} ref={ref} args={[undefined, undefined, cells.length]} castShadow>
       <boxGeometry args={[1, 1, 1]} />
@@ -227,6 +230,19 @@ function CameraFit({ target, radius }: { target: THREE.Vector3; radius: number }
   return null
 }
 
+/**
+ * frameloop 'demand': R3F pide cuadro al cambiar props de objetos three, pero no al desmontarlos (9.8.1:
+ * `removeChild` anula `parent` antes de `invalidateInstance`, que entonces no hace nada) ni al volver a mostrar
+ * la vista. Pide un cuadro tras cada actualización de la escena: planos desactivados, lote borrado, cambio de vista.
+ */
+function RedrawOnUpdate() {
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    invalidate()
+  })
+  return null
+}
+
 export function Scene3D(p: Props) {
   const { min } = useMemo(() => gridStats(p.dem), [p.dem])
   const zRef = min
@@ -269,6 +285,7 @@ export function Scene3D(p: Props) {
         )}
         <OrbitControls target={target} makeDefault maxPolarAngle={Math.PI / 2.05} />
         <CameraFit target={target} radius={radius} />
+        <RedrawOnUpdate />
       </Canvas>
     </div>
   )
