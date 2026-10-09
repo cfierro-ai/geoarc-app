@@ -82,3 +82,29 @@ Origin: `https://chris-fierro.github.io`.
 - Decidir fuente por defecto y proxy de Copernicus (arriba).
 - Actualizar la nota de CORS en `CLAUDE.md` (Trampas conocidas) y el estado del paso 2 en `SPEC.md`.
 - Chris: fijar valores OGUC verificados.
+
+## 2026-10-09 · Traslado a la cuenta docente y fallo de e2e en runner privado
+
+### Repositorio (Chris)
+- El proyecto vive en la cuenta universitaria: **https://github.com/cfierro-ai/geoarc-app** (público).
+  Sitio: **https://cfierro-ai.github.io/geoarc-app/**.
+- Se creó privado. El plan gratuito no permite Pages en repos privados (`422: Your current plan does not support
+  GitHub Pages for this repository`), así que se hizo público. Se descartó GitHub Education porque su beneficio
+  docente es GitHub Team para una *organización*: habría obligado a crear una organización y transferir el repo.
+- Commits firmados con el correo universitario. `Chris-Fierro/geoarc` se mantiene hasta confirmar el sitio nuevo.
+- El CORS medido arriba sigue valiendo: Terrarium responde `Access-Control-Allow-Origin: *` (cualquier origen) y
+  Copernicus no tiene CORS para ningún origen.
+
+### Fallo de `e2e/flujo.spec.ts` solo en el repo privado
+- Síntoma: `locator.hover` sobre «Rol lado 1» agota los 60 s esperando que el elemento esté «visible y estable».
+- Diferencia de entorno: los runners de repos privados tienen 2 vCPU (Playwright corre con 1 worker) y los de repos
+  públicos tienen 4 vCPU (2 workers). El mismo commit pasaba en el repo público.
+- Causa raíz: la vista 3D usaba `frameloop='always'` y redibujaba sin pausa una escena estática, con sombras. Con
+  WebGL por software (SwiftShader en CI; también en equipos sin GPU) cada cuadro costaba ~0,6 s. Playwright necesita
+  cuadros consecutivos estables para el `hover`.
+- Corrección: `frameloop='demand'`, para dibujar solo cuando algo cambia, e `invalidate()` en `CameraFit` al mover
+  la cámara. No se subió el timeout del test.
+- Verificación local con 2 núcleos y 1 worker: cuadro en reposo 610 ms → 7 ms; `hover` 1,7 s → 0,1 s; la órbita y el
+  resaltado por lado siguen redibujando (capturas revisadas). En CI, runner privado: e2e 103 s con fallo → 26 s,
+  2/2 pasados.
+- Regla: todo cambio imperativo en la escena 3D (fuera de las props de React) debe llamar a `invalidate()`.
