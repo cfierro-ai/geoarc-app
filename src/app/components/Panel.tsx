@@ -16,7 +16,7 @@ interface State {
   cell: number
   demSource: DemSourceId
   dem: HeightGrid | null
-  demStatus: { state: 'idle' | 'loading' | 'error'; msg?: string }
+  demStatus: { state: 'idle' | 'loading' | 'error'; msg?: string; warn?: string }
   contourInterval: number
   indexInterval: number
   lot: XY[]
@@ -225,6 +225,11 @@ export function Panel({ s, set, act }: { s: State; set: Setters; act: Actions })
         </button>
         {s.demStatus.state === 'error' && <Note tone="error">{s.demStatus.msg}</Note>}
         {s.demStatus.state === 'idle' && s.demStatus.msg && <Note>{s.demStatus.msg}</Note>}
+        {s.demStatus.state === 'idle' && s.demStatus.warn && (
+          <div data-testid="dem-aviso">
+            <Note tone="warn">{s.demStatus.warn}</Note>
+          </div>
+        )}
         {s.dem && st && (
           <>
             <div className="rounded-md bg-slate-50 p-2 text-xs" data-testid="dem-info">

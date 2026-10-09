@@ -108,3 +108,26 @@ Origin: `https://chris-fierro.github.io`.
   resaltado por lado siguen redibujando (capturas revisadas). En CI, runner privado: e2e 103 s con fallo → 26 s,
   2/2 pasados.
 - Regla: todo cambio imperativo en la escena 3D (fuera de las props de React) debe llamar a `invalidate()`.
+
+## 2026-10-09 · Elevación: Terrarium por defecto y respaldo automático (Chris)
+
+### Diagnóstico de la falla de Copernicus (antes de tocar código)
+Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `curl` usando `Origin: https://cfierro-ai.github.io`:
+- **Consola del navegador:** `Access to fetch at 'https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_S39_00_W073_00_DEM/…tif'
+  from origin 'https://cfierro-ai.github.io' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is
+  present on the requested resource.` Después `net::ERR_FAILED`. La app muestra «Failed to fetch».
+- **GET con `Range: bytes=0-65535`** (lo que pide geotiff.js): `206 Partial Content`, `Content-Range: bytes 0-65535/45689974`,
+  **sin** `Access-Control-Allow-Origin`.
+- **Preflight `OPTIONS`:** `403` — `CORSResponse: CORS is not enabled for this bucket.`
+- **Causa exacta:** el bucket S3 `copernicus-dem-30m` no tiene configuración CORS. El navegador no hace preflight (un
+  `Range` simple es cabecera permitida), recibe los bytes, pero bloquea la respuesta porque falta
+  `Access-Control-Allow-Origin`. No depende del origen ni de la red del usuario, y no se corrige del lado de la app.
+- **Consecuencia para el código:** JavaScript no puede distinguir un bloqueo CORS de una caída de red (ambos llegan como
+  `TypeError: Failed to fetch`). Por eso el respaldo se activa ante **cualquier** error del cargador de Copernicus.
+- Terrarium, mismo origen: `200` con `Access-Control-Allow-Origin: *`.
+
+### Decisión
+- Terrarium pasa a ser la fuente por defecto.
+- Si Copernicus falla, la app carga Terrarium sola, cambia el selector a Terrarium y avisa en el panel
+  («Copernicus no disponible; se usó Terrarium»). Si Terrarium también falla, se informa el error de ambas fuentes.
+- Copernicus queda en el selector para cuando exista un proxy (pendiente en el backlog).

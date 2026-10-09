@@ -35,9 +35,9 @@ export default function App() {
   const [site, setSite] = useState<LonLat>(TEMUCO)
   const [areaSize, setAreaSize] = useState(200)
   const [cell, setCell] = useState(2)
-  const [demSource, setDemSource] = useState<DemSourceId>('copernicus')
+  const [demSource, setDemSource] = useState<DemSourceId>('terrarium')
   const [dem, setDem] = useState<HeightGrid | null>(null)
-  const [demStatus, setDemStatus] = useState<{ state: 'idle' | 'loading' | 'error'; msg?: string }>({ state: 'idle' })
+  const [demStatus, setDemStatus] = useState<{ state: 'idle' | 'loading' | 'error'; msg?: string; warn?: string }>({ state: 'idle' })
   const [contourInterval, setContourInterval] = useState(1)
   const [indexInterval, setIndexInterval] = useState(5)
   const [lot, setLot] = useState<XY[]>([])
@@ -81,11 +81,14 @@ export default function App() {
     async loadTerrain() {
       setDemStatus({ state: 'loading' })
       try {
-        const g = await loadDem(demSource, frame, areaSize, cell)
-        const st = gridStats(g)
+        const r = await loadDem(demSource, frame, areaSize, cell)
+        const st = gridStats(r.grid)
         if (!Number.isFinite(st.min)) throw new Error('La fuente no devolvió datos para esta zona.')
-        setDem(g)
-        setDemStatus({ state: 'idle' })
+        setDem(r.grid)
+        if (r.fallbackFrom) {
+          setDemSource(r.source)
+          setDemStatus({ state: 'idle', warn: 'Copernicus no disponible; se usó Terrarium.' })
+        } else setDemStatus({ state: 'idle' })
       } catch (e) {
         setDemStatus({ state: 'error', msg: e instanceof Error ? e.message : String(e) })
       }

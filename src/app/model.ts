@@ -6,8 +6,12 @@ import { reglaPorRol } from '../core/normativa/perfiles'
 export type DemSourceId = 'copernicus' | 'terrarium' | 'sintetico'
 
 export const DEM_SOURCES: { id: DemSourceId; label: string; hint: string }[] = [
-  { id: 'copernicus', label: 'Copernicus GLO-30 (DSM, global)', hint: 'Superficie: incluye árboles y edificios.' },
   { id: 'terrarium', label: 'Terrarium / SRTM (global)', hint: 'Referencial; ~30 m en Chile.' },
+  {
+    id: 'copernicus',
+    label: 'Copernicus GLO-30 (DSM, global)',
+    hint: 'Superficie: incluye árboles y edificios. Hoy su servidor no permite lectura desde el navegador (CORS); si falla, se usa Terrarium.',
+  },
   { id: 'sintetico', label: 'Ladera sintética (sin conexión)', hint: 'Para práctica y pruebas.' },
 ]
 
