@@ -30,7 +30,8 @@ test('sitio → terreno sintético → lote → envolvente → vista 3D', async 
   // el mapa ocupa todo el visor (regresión: MapLibre forzaba position: relative → 300 px)
   const mapBox = await page.getByTestId('map').boundingBox()
   expect(mapBox!.height).toBeGreaterThan(600)
-  await expect(page.getByTestId('map')).toHaveAttribute('data-idle', 'true') // curvas y lote ya dibujados
+  // curvas y lote ya dibujados; depende de teselas de red y WebGL por software: plazo holgado
+  await expect(page.getByTestId('map')).toHaveAttribute('data-idle', 'true', { timeout: 30_000 })
   await page.screenshot({ path: 'e2e/capturas/01-panel-mapa.png' })
 
   await page.getByRole('button', { name: 'Vista 3D' }).click()

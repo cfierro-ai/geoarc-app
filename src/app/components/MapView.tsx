@@ -126,7 +126,9 @@ export function MapView(p: Props) {
     })
     m.addControl(new NavigationControl({ visualizePitch: false }), 'top-right')
     m.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-left')
-    m.on('load', () => {
+    // 'style.load' y no 'load': las capas propias solo necesitan el estilo; 'load' espera además todas las teselas
+    // del mapa base (vectoriales, con edificios 3D), y en una red lenta curvas y lote tardarían en aparecer.
+    m.once('style.load', () => {
       m.addSource('area', { type: 'geojson', data: empty })
       m.addSource('contours', { type: 'geojson', data: empty })
       m.addSource('lot', { type: 'geojson', data: empty })
