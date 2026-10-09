@@ -144,3 +144,17 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
   más `RedrawOnUpdate`, que pide un cuadro tras cada actualización de la escena (incluye desmontajes y cambio de vista).
 - Prueba: `e2e/resaltado.spec.ts` lee el buffer del canvas. Exige que desactivar los planos cambie el cuadro y que,
   al resaltar el lado 2, los píxeles verdes del lado 4 caigan (medido: 4.482 → 6). Falló antes de la corrección.
+
+## 2026-10-09 · Uso en clase: mapa base y buscador con respaldo (Chris)
+
+- **Mapa base:** OpenFreeMap, estilo vectorial «Liberty» (`tiles.openfreemap.org`, CORS `*`, sin clave), por
+  defecto. OSM raster y Satélite (Esri) son alternativas en el selector. Las tres conviven en un solo estilo y se
+  alternan por visibilidad, así las curvas y el lote no se pierden al cambiar de mapa base.
+- Si el estilo de OpenFreeMap no carga (red de la sala, bloqueo), el mapa queda en OSM raster y «Mapa» se deshabilita
+  (`e2e/mapa-base.spec.ts`).
+- Las etiquetas de cota usan «Noto Sans Regular»: la fuente por defecto de MapLibre (Open Sans) da 404 en OpenFreeMap.
+- **Buscador:** Nominatim; si falla o limita (HTTP de error, red, 8 s sin respuesta) se consulta Photon
+  (`photon.komoot.io`, CORS `*`). Una respuesta vacía no es falla. Photon no admite `lang=es` (400): se usa su idioma
+  por defecto. Tests unitarios con fetch simulado y e2e con Nominatim respondiendo 429.
+- **Atribuciones:** el mapa muestra la del mapa base activo (control no compacto), la lista de resultados indica qué
+  buscador respondió, y el README las detalla todas.

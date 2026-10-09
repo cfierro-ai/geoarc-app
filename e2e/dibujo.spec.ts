@@ -10,6 +10,7 @@ test('dibujar lote en el mapa: el polígono queda bajo el cursor', async ({ page
   await page.getByLabel('Fuente de elevación').selectOption('sintetico')
   await page.getByRole('button', { name: 'Cargar terreno' }).click()
   await expect(page.getByTestId('dem-info')).toBeVisible()
+  await expect(page.getByTestId('map')).toHaveAttribute('data-ready', 'true') // el mapa se crea tras cargar el estilo base
 
   const box = (await page.getByTestId('map').boundingBox())!
   const cx = box.x + box.width / 2

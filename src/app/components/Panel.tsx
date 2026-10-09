@@ -8,6 +8,7 @@ import { area, facing, outwardNormal, toCCW } from '../../core/envelope/polygon'
 import { PERFILES, perfilVerificado, type EdgeRole, type PerfilNormativo } from '../../core/normativa/perfiles'
 import { DEM_SOURCES, edgeColor, fmt, MAX_HEIGHT_COLOR, ROLE_LABEL, type DemSourceId, type EdgeSetting, type MapMode } from '../model'
 import type { View } from '../../App'
+import { geocode, type GeocodeResponse, type GeoResult } from '../geocode'
 
 interface State {
   site: LonLat
@@ -104,7 +105,8 @@ function Num({ value, onChange, step = 0.5, min, label }: { value: number; onCha
 
 function SiteSearch({ onPick }: { onPick: (p: LonLat) => void }) {
   const [q, setQ] = useState('')
-  const [res, setRes] = useState<{ name: string; p: LonLat }[]>([])
+  const [res, setRes] = useState<GeoResult[]>([])
+  const [provider, setProvider] = useState<GeocodeResponse['provider']>()
   const [err, setErr] = useState<string>()
   const go = async () => {
     setErr(undefined)
@@ -115,10 +117,10 @@ function SiteSearch({ onPick }: { onPick: (p: LonLat) => void }) {
       return
     }
     try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`)
-      const j = (await r.json()) as { display_name: string; lat: string; lon: string }[]
-      setRes(j.map((x) => ({ name: x.display_name, p: { lat: +x.lat, lon: +x.lon } })))
-      if (!j.length) setErr('Sin resultados.')
+      const r = await geocode(q)
+      setRes(r.results)
+      setProvider(r.provider)
+      if (!r.results.length) setErr('Sin resultados.')
     } catch {
       setErr('No se pudo consultar el buscador. Ingresa coordenadas "lat, lon".')
     }
@@ -145,6 +147,9 @@ function SiteSearch({ onPick }: { onPick: (p: LonLat) => void }) {
               </button>
             </li>
           ))}
+          <li className="border-t border-slate-100 px-2 py-0.5 text-[10px] text-slate-400" data-testid="geocoder-attribution">
+            Búsqueda: {provider === 'Photon' ? 'Photon (komoot)' : 'Nominatim'} · datos © OpenStreetMap
+          </li>
         </ul>
       )}
     </div>

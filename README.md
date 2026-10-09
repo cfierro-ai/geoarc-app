@@ -28,9 +28,17 @@ al hacer push a `main` (activar Pages → “GitHub Actions” en la configuraci
 
 ## Datos y atribuciones
 
-- Mapa: © OpenStreetMap contributors. Imagen satelital: © Esri, Maxar, Earthstar Geographics.
-- Elevación: Copernicus DEM GLO-30 (© DLR e.V. / Airbus, provisto bajo el programa Copernicus); AWS Terrain Tiles (Mapzen/Tilezen, fuentes SRTM, GMTED, ETOPO1 y otras).
-- Búsqueda: Nominatim / OpenStreetMap.
+- Mapa base (por defecto): [OpenFreeMap](https://openfreemap.org), estilo Liberty ·
+  [© OpenMapTiles](https://www.openmaptiles.org/) · datos [© OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
+- Mapa base alternativo «OSM»: teselas raster de OpenStreetMap · © OpenStreetMap contributors.
+- Imagen satelital: Esri World Imagery · © Esri, Maxar, Earthstar Geographics.
+- Elevación: AWS Terrain Tiles / Terrarium (Mapzen/Tilezen; fuentes SRTM, GMTED, ETOPO1 y otras), fuente por defecto.
+  Copernicus DEM GLO-30 (© DLR e.V. / Airbus, provisto bajo el programa Copernicus de la Unión Europea y la ESA).
+- Búsqueda: [Nominatim](https://nominatim.org) y, como respaldo, [Photon](https://photon.komoot.io) (komoot) ·
+  datos © OpenStreetMap contributors.
+
+El mapa muestra las atribuciones del mapa base activo (esquina inferior derecha), y la lista de resultados indica qué
+buscador respondió.
 
 Resultados con fines docentes: no reemplazan un levantamiento topográfico ni el certificado de informaciones previas.
 
