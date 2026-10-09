@@ -216,12 +216,14 @@ function RasantePlanes({ ctx, env, zRef, ex, selectedEdge }: { ctx: EnvelopeCont
 }
 
 function CameraFit({ target, radius }: { target: THREE.Vector3; radius: number }) {
-  const { camera } = useThree()
+  const { camera, invalidate } = useThree()
   useEffect(() => {
     camera.position.set(target.x + radius * 1.1, target.y + radius * 0.9, target.z + radius * 1.3)
     camera.lookAt(target)
     camera.updateProjectionMatrix()
-  }, [camera, target, radius])
+    // frameloop 'demand': un cambio imperativo de cámara debe pedir su cuadro.
+    invalidate()
+  }, [camera, invalidate, target, radius])
   return null
 }
 
@@ -250,7 +252,9 @@ export function Scene3D(p: Props) {
         shadows
         camera={{ fov: 40, near: 0.5, far: 20000 }}
         gl={{ preserveDrawingBuffer: true, antialias: true }}
-        frameloop={p.visible ? 'always' : 'never'}
+        // La escena es estática: se dibuja solo cuando algo cambia. Con 'always' se redibujaba sin pausa
+        // (~0,6 s por cuadro con WebGL por software), saturando CPU en CI y en equipos sin GPU.
+        frameloop={p.visible ? 'demand' : 'never'}
         id="geoarc-3d"
       >
         <ambientLight intensity={0.55} />
