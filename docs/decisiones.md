@@ -80,7 +80,7 @@ Origin: `https://chris-fierro.github.io`.
 
 ### Pendientes abiertos
 - Decidir fuente por defecto y proxy de Copernicus (arriba).
-- Actualizar la nota de CORS en `CLAUDE.md` (Trampas conocidas) y el estado del paso 2 en `SPEC.md`.
+- Actualizar la nota de CORS en `CLAUDE.md` (Trampas conocidas) y el estado del paso 2 en `SPEC.md`. → Hecho el 2026-10-09.
 - Chris: fijar valores OGUC verificados.
 
 ## 2026-10-09 · Traslado a la cuenta docente y fallo de e2e en runner privado

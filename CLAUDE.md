@@ -75,4 +75,8 @@ techo(p) = min( suelo(p) + Hmax ,  min_lados_i  min_{q ∈ lado_i}  [ suelo(q) +
   `position: relative` en el contenedor: usar estilo en línea.
 - El doble clic del mapa dispara dos clics antes: `cleanRing` en `App.tsx` elimina vértices repetidos.
 - Lectura de Copernicus: respetar `GTRasterTypeGeoKey` (PixelIsPoint vs PixelIsArea); un error ahí desplaza ~15 m.
-- Acceso CORS a Copernicus/Terrarium desde navegador **no está verificado** en producción (ver backlog en `SPEC.md`).
+- CORS verificado (2026-10-09, `docs/decisiones.md`): Terrarium responde `Access-Control-Allow-Origin: *`; el bucket
+  de Copernicus **no tiene CORS** y el navegador bloquea la lectura. `loadDem` cae a Terrarium y avisa en el panel.
+  Para usar Copernicus en la web hace falta un proxy (backlog en `SPEC.md`).
+- Vista 3D con `frameloop='demand'`: todo cambio fuera de las props de React (matrices/colores de instancias, cámara)
+  debe llamar a `invalidate()`. R3F 9.8.1 no redibuja al desmontar objetos; lo cubre `RedrawOnUpdate` en `Scene3D.tsx`.

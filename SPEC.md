@@ -14,8 +14,8 @@ y desde dónde nace cada rasante.
 
 | Paso | Qué hace | Estado v0.1 |
 |---|---|---|
-| 1. Sitio | Búsqueda por dirección (Nominatim) o «lat, lon», o clic en mapa. Marco UTM automático. | Hecho |
-| 2. Terreno | DEM: Copernicus GLO-30 (DSM), Terrarium/SRTM, ladera sintética. Curvas con equidistancia y maestras. Metadatos y advertencias (DSM, precisión aparente). | Hecho (CORS por verificar) |
+| 1. Sitio | Búsqueda por dirección (Nominatim, con respaldo a Photon) o «lat, lon», o clic en mapa (OpenFreeMap; OSM raster y satélite como alternativas). Marco UTM automático. | Hecho |
+| 2. Terreno | DEM: Terrarium/SRTM (por defecto), Copernicus GLO-30 (DSM), ladera sintética. Curvas con equidistancia y maestras. Metadatos y advertencias (DSM, precisión aparente). | Hecho. CORS verificado: Terrarium OK; Copernicus bloqueado (su bucket no tiene CORS) → respaldo automático a Terrarium con aviso |
 | 3. Lote | Dibujo en planta sobre el mapa (clic/doble clic) o lote de ejemplo. | Hecho |
 | 4. Norma | Perfil OGUC Chile / Personalizado. Altura máxima. Por lado: rol (deslinde, frente, sin rasante), ángulo, arranque, distanciamiento, eje de calle. | Hecho (valores OGUC por verificar) |
 | 5. Resultados | Superficie, huella, volumen, altura máx.; reparto de qué restricción gobierna; 3D con planos de rasante; DXF (UTM) y PNG; guardar/abrir `.geoarc`. | Hecho |
@@ -40,7 +40,8 @@ y desde dónde nace cada rasante.
 ## Backlog priorizado
 
 **Alta**
-1. Verificar en navegador real el acceso CORS a Copernicus y Terrarium; si falla, proxy liviano (Cloudflare Worker) documentado.
+1. Proxy liviano para Copernicus (p. ej. Cloudflare Worker que reenvíe `Range` y agregue CORS), documentado antes en
+   `docs/decisiones.md`. El CORS ya está verificado: Copernicus no tiene CORS (hoy se usa Terrarium como respaldo).
 2. Perfil OGUC verificado por Chris: tabla de ángulos por región, arranque, distanciamientos, regla sobre 10,5 m (si aplica). Tests que lo fijen.
 3. Asignación de región por point-in-polygon (límites regionales oficiales) en vez de manual.
 4. Importar levantamiento topográfico DXF (curvas/puntos con cota → TIN → grilla).
