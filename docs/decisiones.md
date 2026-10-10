@@ -259,3 +259,45 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
 ### Ramas y PR
 - El PR #1 seguía abierto (CI en verde) cuando se pidió continuar. La mezcla sin revisión quedó bloqueada por los
   permisos de la sesión, así que este trabajo va en `v0.2-sombras`, apilado sobre `v0.2-modulos`: mezclar #1 antes que #2.
+
+## 2026-10-10 · v0.2 · Importador de levantamiento DXF (Chris)
+
+### Pedido
+- LWPOLYLINE (cota en el código 38), POLYLINE/VERTEX 3D y LINE con Z. Informar capas y rango de cotas.
+- Coordenadas locales por defecto (centra el dibujo en el sitio); «UTM del sitio» opcional.
+- TIN con delaunator y muestreo por triángulo → `HeightGrid` con `meta.kind = 'levantamiento'`. Alimenta a los dos módulos.
+
+### Decisiones de implementación
+- **Lector** (`src/core/survey/dxfRead.ts`): propio, por pares código/valor (LF o CRLF), solo sección ENTITIES y espacio
+  modelo. Además de lo pedido lee POLYLINE 2D (cota = 30 del encabezado) y POINT con Z, frecuentes en levantamientos.
+  Se ignoran e informan: mallas, entidades de espacio papel, textos, bloques, etc. Los arcos de polilínea (bulge) se
+  toman como tramos rectos. Extrusión (0, 0, −1) de dibujos espejados: x y la cota cambian de signo.
+- **Capas por defecto:** todas, menos las que están enteras a cota 0 si otras tienen cota (deslindes, ejes y textos
+  dibujados en planta hundirían el terreno). El profesor puede marcar o desmarcar capas.
+- **TIN** (`src/core/survey/tin.ts`): las polilíneas y líneas se densifican (tramos de hasta 2 celdas, entre 0,25 y
+  2 m) para que el TIN siga las curvas. Delaunay con `delaunator` 5.1.0 (mapbox, ISC, sin otra dependencia que
+  `robust-predicates`).
+- **Pelado del borde:** desde el contorno convexo hacia adentro se quitan los triángulos cuya arista mayor supera 5 ×
+  la separación típica. Así un levantamiento en L no se rellena con triángulos largos. La separación típica es la
+  mediana de la arista MAYOR de cada triángulo (en un TIN de curvas, la distancia entre curvas). La mediana de todas
+  las aristas fallaba: la densificación la llena de tramos cortos a lo largo de las curvas y el pelado se comía el TIN
+  completo (detectado midiendo: 370 de ~1 500 triángulos y 87 % de nodos sin dato).
+- **Muestreo por triángulo:** cada triángulo asigna su interpolación lineal a los nodos que contiene. Los nodos a
+  menos de 1,5 celdas por fuera se extrapolan, acotados a las cotas del triángulo, porque la bilineal en un punto del
+  borde usa nodos hasta √2 celdas afuera. Sin la cota, el borde inventaba cotas (99,8 m con la curva más baja en 100 m).
+- `nominalResolutionM` del levantamiento = separación típica entre datos (no la celda de la grilla). La equidistancia
+  mínima del levantamiento es 0,5 m (criterio de Chris).
+- **Terreno compartido:** importar el levantamiento lo deja como terreno de la app (`terrain.survey`). Curvas lo dibuja
+  y el Estudio de sombras lo usa en «Levantamiento importado». Dibujar un área nueva o cambiar de fuente lo reemplaza
+  por terreno descargado. «Terreno del sitio» no confunde el levantamiento con el terreno descargado: pide este último
+  alrededor del lote.
+- El `.geoarc` no incluye el DXF. Guarda su nombre (`surveyFile`), y al abrir la escena se avisa que hay que volver a
+  importarlo; no se descarga nada en su lugar.
+- **Caso dorado:** un DXF sintético con 3 curvas concéntricas (100, 102 y 104 m), una por tipo de entidad
+  (LWPOLYLINE, POLYLINE 3D, LINE). La grilla reproduce las cotas sobre las curvas con error máximo de **0,0125 m**
+  (límite 0,05 m). En e2e se importa un cerro de 5 curvas con un deslinde a cota 0 y un texto.
+
+### Pendientes
+- Abrir un levantamiento real de Chris (AutoCAD / Civil 3D) para confirmar el lector con dibujos de oficina.
+- Backlog: arcos (bulge) y CIRCLE, 3DFACE, bloques de puntos (INSERT con atributos), unidades distintas de metros,
+  líneas de quiebre (TIN restringido a las curvas).

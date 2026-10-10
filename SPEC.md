@@ -29,7 +29,7 @@ restricción manda en cada punto y desde dónde nace cada rasante.
 ## Módulo 1 · Curvas de nivel
 
 Flujo del profesor: **ubicar el sitio → dibujar el área → las curvas aparecen.** El profesor no elige ni carga un DEM
-(salvo ladera sintética sin internet o, más adelante, un levantamiento DXF).
+(salvo ladera sintética sin internet o un levantamiento DXF propio).
 
 | Paso | Qué hace | Estado |
 |---|---|---|
@@ -39,6 +39,7 @@ Flujo del profesor: **ubicar el sitio → dibujar el área → las curvas aparec
 | · Malla del dato | Capa opcional sobre el mapa con celdas del tamaño real del dato. | Hecho |
 | · DXF | Capas CURVAS, CURVAS_MAESTRAS, ETIQUETAS (TEXT con la cota sobre las maestras) y AREA, en UTM absolutas. | Hecho |
 | · Fuente | En «Opciones avanzadas» (plegado): Terrarium (automático), ladera sintética (sin conexión), Copernicus GLO-30 visible y deshabilitado («requiere proxy»). | Hecho |
+| · Levantamiento | «Importar levantamiento DXF…»: LWPOLYLINE (cota en 38), POLYLINE/VERTEX 2D y 3D, LINE y POINT con Z. Informa capas, entidades y rango de cotas; las capas enteras a cota 0 quedan fuera por defecto. Coordenadas locales (centra el dibujo en el sitio, por defecto) o UTM del sitio. TIN (delaunator) → grilla con `meta.kind = 'levantamiento'`; pasa a ser el terreno compartido. | Hecho |
 
 ## Módulo 2 · Estudio de sombras
 
@@ -47,7 +48,7 @@ Envolvente por rasantes, distanciamientos y altura máxima.
 | Paso | Qué hace | Estado |
 |---|---|---|
 | 1. Sitio | El mismo del módulo de curvas (compartido). | Hecho |
-| 2. Terreno | **Plano (cota 0)** por defecto, sin red · **Terreno del sitio**: reutiliza el terreno compartido si cubre el lote; si no, lo descarga solo alrededor del lote · **Levantamiento importado**: visible, «próximamente». | Hecho (levantamiento: PR siguiente) |
+| 2. Terreno | **Plano (cota 0)** por defecto, sin red · **Terreno del sitio**: reutiliza el terreno compartido si cubre el lote; si no, lo descarga solo alrededor del lote · **Levantamiento importado**: el mismo importador DXF del módulo de curvas. | Hecho |
 | 3. Lote | Dibujo en planta sobre el mapa (clic/doble clic), lote de ejemplo, o **por dimensiones** (ancho = frente, fondo, giro antihorario), centrado en el sitio. | Hecho |
 | 4. Norma | Perfil OGUC Chile / Personalizado. Altura máxima. Por lado: rol (deslinde, frente, sin rasante), ángulo, arranque, distanciamiento, eje de calle. | Hecho (valores OGUC por verificar) |
 | 5. Resultados | Superficie, huella, volumen, altura máx.; reparto de qué restricción gobierna; 3D con planos de rasante; DXF (UTM) y PNG. | Hecho |
@@ -75,13 +76,13 @@ test del núcleo «lote plano 20×20, rasante 70°» (centro = 10·tan 70°).
 ## Backlog priorizado
 
 **Alta**
-1. Importar levantamiento topográfico DXF (curvas/puntos con cota → TIN → grilla) para los dos módulos. *(PR siguiente.)*
-2. Perfil OGUC verificado por Chris: tabla de ángulos por región, arranque, distanciamientos, regla sobre 10,5 m (si aplica). Tests que lo fijen.
-3. Asignación de región por point-in-polygon (límites regionales oficiales) en vez de manual.
-4. Proxy liviano para Copernicus (p. ej. Cloudflare Worker que reenvíe `Range` y agregue CORS), documentado antes en
+1. Perfil OGUC verificado por Chris: tabla de ángulos por región, arranque, distanciamientos, regla sobre 10,5 m (si aplica). Tests que lo fijen.
+2. Asignación de región por point-in-polygon (límites regionales oficiales) en vez de manual.
+3. Proxy liviano para Copernicus (p. ej. Cloudflare Worker que reenvíe `Range` y agregue CORS), documentado antes en
    `docs/decisiones.md`. El CORS ya está verificado: Copernicus no tiene CORS (hoy aparece deshabilitado en el selector).
 
 **Media**
+4. Importar del DXF arcos (bulge), CIRCLE, 3DFACE e INSERT de puntos; unidades distintas de metros; restricciones del TIN a lo largo de las curvas (líneas de quiebre).
 5. Volumen propuesto (dibujado o importado) vs envolvente, con verificación visual de excesos.
 6. Sombras con `suncalc`: envolvente vs volumen propuesto en fechas/horas definidas por norma.
 7. FABDEM (DTM) pre-procesado solo para Chile, alojado como COG estático (licencia no comercial: uso docente).

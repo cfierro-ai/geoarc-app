@@ -36,6 +36,7 @@ src/core/            lógica pura, sin React. Testeable en Node.
   contours/escala.ts equidistancia mínima confiable, preselección y uso del dato — ÚNICO lugar del criterio
   envelope/          envolvente como CAMPO DE ALTURAS + utilidades de polígono; lote.ts: lote por dimensiones
   export/            DXF R12 (curvas, lote, envolvente) en UTM absolutas
+  survey/            importador de levantamiento DXF: lector, TIN (delaunator) → grilla 'levantamiento'
   normativa/         perfiles normativos — ÚNICO lugar con valores normativos
 src/app/             piezas comunes de la UI
   store.ts           estado: sitio y terreno COMPARTIDOS + estado de cada módulo; carga de terreno
@@ -65,7 +66,8 @@ techo(p) = min( suelo(p) + Hmax ,  min_lados_i  min_{q ∈ lado_i}  [ suelo(q) +
 - Polígonos: el índice del lado k = vértice k → k+1 **en el orden del usuario**; la orientación (CW/CCW) se normaliza internamente.
 - Three.js: local (x este, y norte, z cota) → three (X, Y arriba, Z = −y). Ver `useToThree` en `Scene3D.tsx`.
 - DXF siempre en UTM absolutas del huso del sitio (georreferenciado), metros.
-- Metadatos del DEM (`DemMeta`) siempre visibles al usuario: fuente, tipo (DSM/DTM) y resolución **real** del dato.
+- Metadatos del DEM (`DemMeta`) siempre visibles al usuario: fuente, tipo (DSM/DTM/levantamiento/plano) y resolución
+  **real** del dato (en un levantamiento, la separación típica entre datos, no la celda de la grilla).
 - UI en español de Chile (sin voseo). Números con `fmt()` (formato es-CL).
 
 ## Reglas no negociables

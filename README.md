@@ -7,10 +7,10 @@ La pantalla de inicio ofrece dos módulos. Cada uno funciona solo; el sitio y el
 - **Curvas de nivel** (`/curvas`): ubica el sitio, dibuja el área en el mapa (dos clics) y las curvas aparecen. El
   terreno se descarga solo. El panel dice para qué sirve el dato («dato de ~30 m: útil para ladera y barrio, no para el
   lote») y preselecciona la equidistancia según la resolución y el desnivel. Exporta un DXF georreferenciado (UTM) con
-  cotas.
+  cotas. Si hay un levantamiento topográfico, se importa su DXF (curvas o puntos con cota) y pasa a ser el terreno.
 - **Estudio de sombras** (`/sombras`): define el lote (dibujado, de ejemplo o por ancho, fondo y giro) y aplica
-  rasantes, distanciamientos y altura máxima. Se calcula en plano (cota 0, por defecto) o sobre el terreno del sitio.
-  Muestra qué restricción manda en cada punto; vista 3D, DXF y PNG.
+  rasantes, distanciamientos y altura máxima. Se calcula en plano (cota 0, por defecto), sobre el terreno del sitio o
+  sobre el levantamiento importado. Muestra qué restricción manda en cada punto; vista 3D, DXF y PNG.
 
 ## Uso local
 
