@@ -1,19 +1,28 @@
 import { expect, test } from '@playwright/test'
+import { dibujarArea, usarLaderaSintetica } from './util'
 
 /**
- * Flujo docente completo SIN red externa: ladera sintética + lote de ejemplo.
+ * Flujo docente completo SIN red externa: ladera sintética + área dibujada + lote de ejemplo.
  * Deja capturas en e2e/capturas/ para revisión visual.
  */
-test('sitio → terreno sintético → lote → envolvente → vista 3D', async ({ page }) => {
+test('sitio → área → curvas → lote → envolvente → vista 3D', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'GEO·ARC' })).toBeVisible()
 
-  await page.getByLabel('Fuente de elevación').selectOption('sintetico')
-  await page.getByRole('button', { name: 'Cargar terreno' }).click()
+  await usarLaderaSintetica(page)
+  await dibujarArea(page)
+  // sin botón de carga: al cerrar el área la ladera se genera sola
   await expect(page.getByTestId('dem-info')).toContainText('Ladera sintética')
+  await expect(page.getByTestId('area-info')).toContainText(' ha · celda ')
+  await expect(page.getByTestId('escala-dato')).toBeVisible()
+  const [curvas] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Exportar curvas DXF (UTM)' }).click(),
+  ])
+  await curvas.saveAs('e2e/capturas/11-curvas-ladera.dxf')
 
   await page.getByRole('button', { name: 'Lote de ejemplo' }).click()
   await expect(page.getByTestId('lot-info')).toContainText('4 lados')
@@ -31,6 +40,7 @@ test('sitio → terreno sintético → lote → envolvente → vista 3D', async 
   const mapBox = await page.getByTestId('map').boundingBox()
   expect(mapBox!.height).toBeGreaterThan(600)
   // curvas y lote ya dibujados; depende de teselas de red y WebGL por software: plazo holgado
+  await expect(page.getByTestId('map')).not.toHaveAttribute('data-curvas', '0')
   await expect(page.getByTestId('map')).toHaveAttribute('data-idle', 'true', { timeout: 30_000 })
   await page.screenshot({ path: 'e2e/capturas/01-panel-mapa.png' })
 
