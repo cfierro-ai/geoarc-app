@@ -230,6 +230,20 @@ export function MapView(p: Props) {
     else m.doubleClickZoom.enable()
   }, [p.mode, ready])
 
+  // si el área no se ve completa (p. ej. un levantamiento en UTM lejos del centro), encuadrarla; un área dibujada ya
+  // está en pantalla y no mueve el mapa
+  useEffect(() => {
+    const m = map.current
+    if (!m || !ready || !p.area) return
+    const cs = rectCorners(p.area).map((q) => p.frame.toLonLat(q))
+    const b = m.getBounds()
+    if (cs.every((c) => b.contains([c.lon, c.lat]))) return
+    const lons = cs.map((c) => c.lon)
+    const lats = cs.map((c) => c.lat)
+    m.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: 40, duration: 0 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.area, ready])
+
   // sin primera esquina (o fuera del modo área) no hay vista previa
   useEffect(() => {
     if (p.mode !== 'area' || !p.areaCorner) setHoverRect(null)

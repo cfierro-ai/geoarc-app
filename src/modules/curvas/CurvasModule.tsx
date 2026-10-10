@@ -16,6 +16,7 @@ import { sceneToDxf } from '../../core/export/sceneDxf'
 import { MapView } from '../../app/components/MapView'
 import { Scene3D } from '../../app/components/Scene3D'
 import { SiteSection } from '../../app/components/SiteSection'
+import { SurveyImport } from '../../app/components/SurveyImport'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
 import { btn, btnPrimary, input, ModulePanel, Note, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
@@ -98,6 +99,7 @@ export function CurvasModule() {
               {!area && <span className="text-xs text-slate-500">Dos clics en esquinas opuestas. El terreno se descarga solo.</span>}
             </div>
           )}
+          <SurveyImport />
           {area && cell !== null && (
             <p className="text-xs text-slate-600" data-testid="area-info">
               {fmtAreaSize(rectSize(area).w, rectSize(area).h)} · celda {fmtNum(cell)} m ({gridCells(area, cell).nx} × {gridCells(area, cell).ny})

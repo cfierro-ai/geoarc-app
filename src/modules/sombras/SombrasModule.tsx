@@ -12,11 +12,12 @@ import { sceneToDxf } from '../../core/export/sceneDxf'
 import { MapView } from '../../app/components/MapView'
 import { Scene3D } from '../../app/components/Scene3D'
 import { SiteSection } from '../../app/components/SiteSection'
+import { SurveyImport } from '../../app/components/SurveyImport'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
 import { btn, btnPrimary, input, ModulePanel, Note, Num, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
 import { edgeColor, exampleLot, fmt, MAX_HEIGHT_COLOR, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
-import { actions, gridCoversLot, useAppState } from '../../app/store'
+import { actions, gridCoversLot, studySiteGrid, useAppState } from '../../app/store'
 
 /** Quita vértices repetidos (el doble clic agrega dos clics extra en el mismo punto). */
 function cleanRing(pts: XY[], tol = 0.3): XY[] {
@@ -26,11 +27,14 @@ function cleanRing(pts: XY[], tol = 0.3): XY[] {
   return out
 }
 
-/** Grilla sobre la que se calcula y dibuja el estudio: plana (cota 0) o el terreno del sitio si cubre el lote. */
-function useStudyGrid(terrainMode: TerrainMode, lot: XY[], dem: HeightGrid | null): HeightGrid | null {
+/**
+ * Grilla sobre la que se calcula y dibuja el estudio: plana (cota 0), el terreno del sitio si cubre el lote, o el
+ * levantamiento importado.
+ */
+function useStudyGrid(terrainMode: TerrainMode, lot: XY[]): HeightGrid | null {
   const flat = useMemo(() => (terrainMode === 'plano' && lot.length > 2 ? flatGrid(terrainAreaForLot(lot), 1) : null), [terrainMode, lot])
-  if (terrainMode === 'plano') return flat
-  return terrainMode === 'sitio' && dem && lot.length > 2 && gridCoversLot(dem, lot) ? dem : null
+  const site = useAppState(studySiteGrid)
+  return terrainMode === 'plano' ? flat : site
 }
 
 function LotDimensions() {
@@ -71,7 +75,7 @@ export function SombrasModule() {
   // al entrar al módulo (p. ej. tras redibujar el área en Curvas) se verifica que el terreno cubra el lote
   useEffect(() => void actions.ensureSiteTerrain(), [])
 
-  const grid = useStudyGrid(terrainMode, lot, terrain.dem)
+  const grid = useStudyGrid(terrainMode, lot)
   const view = grid && lot.length > 2 ? sombras.view : 'mapa'
   const terrainFn = useCallback((x: number, y: number) => (grid ? sampleBilinear(grid, x, y) : NaN), [grid])
 
@@ -82,9 +86,9 @@ export function SombrasModule() {
   const envelope = useMemo(() => (envInput ? computeEnvelope(envInput) : undefined), [envInput])
   const envCtx = useMemo(() => (envInput ? prepare(envInput) : undefined), [envInput])
 
-  // curvas del terreno del sitio (equidistancia preseleccionada), como referencia en el mapa y en 3D
+  // curvas del terreno (sitio o levantamiento; equidistancia preseleccionada), como referencia en el mapa y en 3D
   const { contours, indexInterval } = useMemo(() => {
-    if (terrainMode !== 'sitio' || !grid) return { contours: [], indexInterval: 25 }
+    if (terrainMode === 'plano' || !grid) return { contours: [], indexInterval: 25 }
     const { min, max } = gridStats(grid)
     const e = preseleccionEquidistancia(grid.meta, max - min).equidistancia
     return { contours: isolines(grid, contourLevels(min, max, e)), indexInterval: 5 * e }
@@ -137,7 +141,7 @@ export function SombrasModule() {
   }, [envelope])
 
   const exportDxf = () => {
-    const sitio = terrainMode === 'sitio'
+    const sitio = terrainMode !== 'plano'
     const dxf = sceneToDxf({
       frame,
       contours,
@@ -185,6 +189,15 @@ export function SombrasModule() {
               <TerrainStatus />
               {grid && <TerrainMeta />}
               <SourceOptions />
+            </>
+          )}
+          {terrainMode === 'levantamiento' && (
+            <>
+              <SurveyImport />
+              {grid && <TerrainMeta />}
+              {grid && lot.length > 2 && !gridCoversLot(grid, lot) && (
+                <Note tone="warn">Parte del lote queda fuera del levantamiento: ahí no hay cotas y la envolvente queda incompleta.</Note>
+              )}
             </>
           )}
         </Section>
@@ -313,7 +326,7 @@ export function SombrasModule() {
           <MapView
             frame={frame}
             site={site}
-            area={terrainMode === 'sitio' ? terrain.area : null}
+            area={terrainMode !== 'plano' ? terrain.area : null}
             areaCorner={null}
             loading={terrainMode === 'sitio' && terrain.status.state === 'loading'}
             contours={contours}

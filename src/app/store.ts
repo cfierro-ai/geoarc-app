@@ -17,6 +17,7 @@ import {
   type View,
 } from './model'
 import type { Scene } from './scene'
+import type { SurveyInfo, SurveyTerrain } from '../core/survey/survey'
 
 /**
  * Estado de la app. `site` y `terrain` son COMPARTIDOS por los dos módulos (el terreno descargado en Curvas sirve
@@ -28,6 +29,8 @@ export interface TerrainState {
   source: DemSourceId
   dem: HeightGrid | null
   status: DemStatus
+  /** Si el terreno vigente es un levantamiento importado (DXF), su descripción; si no, null. */
+  survey: SurveyInfo | null
 }
 
 export interface CurvasState {
@@ -58,7 +61,7 @@ export interface AppState {
 export function initialState(): AppState {
   return {
     site: TEMUCO,
-    terrain: { area: null, source: 'terrarium', dem: null, status: { state: 'idle' } },
+    terrain: { area: null, source: 'terrarium', dem: null, status: { state: 'idle' }, survey: null },
     curvas: { contourInterval: 5, indexEvery: 5, showDataGrid: false, view: 'mapa' },
     sombras: {
       terrainMode: 'plano',
@@ -79,11 +82,19 @@ export function gridCoversLot(g: HeightGrid, lot: XY[]): boolean {
   return b.minX >= g.x0 && b.minY >= g.y0 && b.maxX <= g.x0 + (g.nx - 1) * g.cell && b.maxY <= g.y0 + (g.ny - 1) * g.cell
 }
 
-/** ¿El estudio de sombras tiene vista 3D? Necesita lote y terreno (plano, o el del sitio cubriendo el lote). */
-export function sombras3dAvailable(s: AppState): boolean {
+/** Grilla del estudio de sombras según su terreno, o null si todavía no hay (el plano se arma en el módulo). */
+export function studySiteGrid(s: AppState): HeightGrid | null {
   const { terrainMode, lot } = s.sombras
-  if (lot.length < 3) return false
-  return terrainMode === 'plano' || (terrainMode === 'sitio' && !!s.terrain.dem && gridCoversLot(s.terrain.dem, lot))
+  const { dem, survey } = s.terrain
+  if (terrainMode === 'sitio') return dem && !survey && lot.length > 2 && gridCoversLot(dem, lot) ? dem : null
+  if (terrainMode === 'levantamiento') return survey ? dem : null
+  return null
+}
+
+/** ¿El estudio de sombras tiene vista 3D? Necesita lote y terreno (plano, el del sitio o el levantamiento). */
+export function sombras3dAvailable(s: AppState): boolean {
+  if (s.sombras.lot.length < 3) return false
+  return s.sombras.terrainMode === 'plano' || !!studySiteGrid(s)
 }
 
 const rectContains = (outer: Rect, inner: Rect) =>
@@ -111,7 +122,7 @@ export function createAppStore(loaders?: DemLoaders) {
   async function loadTerrain(area: Rect, source = state.terrain.source, opts: { interval?: number; notice?: string } = {}) {
     const my = ++seq
     const frame = createLocalFrame(state.site)
-    setTerrain({ area, source, dem: null, status: { state: 'loading' } })
+    setTerrain({ area, source, dem: null, survey: null, status: { state: 'loading' } })
     try {
       const r = await loadDem(source, frame, area, autoCell(area), loaders)
       if (my !== seq) return
@@ -130,7 +141,8 @@ export function createAppStore(loaders?: DemLoaders) {
     const { terrainMode, lot } = state.sombras
     const t = state.terrain
     if (terrainMode !== 'sitio' || lot.length < 3 || t.status.state === 'error') return
-    if (t.dem && gridCoversLot(t.dem, lot)) return
+    // un levantamiento importado no es «el terreno del sitio» descargado: se pide el del sitio alrededor del lote
+    if (t.dem && !t.survey && gridCoversLot(t.dem, lot)) return
     if (t.status.state === 'loading' && t.area && rectContains(t.area, lotBox(lot, 10))) return
     return loadTerrain(terrainAreaForLot(lot))
   }
@@ -144,9 +156,19 @@ export function createAppStore(loaders?: DemLoaders) {
       seq++ // descarta una descarga en curso del sitio anterior
       set({
         site: p,
-        terrain: { ...state.terrain, area: null, dem: null, status: { state: 'idle' } },
+        terrain: { ...state.terrain, area: null, dem: null, survey: null, status: { state: 'idle' } },
         sombras: { ...state.sombras, lot: [], edges: [] },
       })
+    },
+    /**
+     * Un levantamiento importado pasa a ser el terreno compartido: Curvas lo dibuja y el Estudio de sombras lo usa en
+     * «Levantamiento importado». Descarta cualquier descarga en curso.
+     */
+    importSurvey(t: SurveyTerrain) {
+      seq++
+      const st = gridStats(t.grid)
+      setCurvas({ contourInterval: preseleccionEquidistancia(t.grid.meta, st.max - st.min).equidistancia })
+      setTerrain({ area: t.area, dem: t.grid, survey: t.info, status: { state: 'idle' } })
     },
     setTerrainSource(src: DemSourceId) {
       if (!isSourceAvailable(src)) return
@@ -200,17 +222,21 @@ export function createAppStore(loaders?: DemLoaders) {
         profileId: sombras.profileId,
         maxHeight: sombras.maxHeight,
         edges: sombras.edges,
+        surveyFile: terrain.survey?.fileName,
       }
     },
     openScene(s: Scene) {
       seq++
+      // el .geoarc no lleva el DXF del levantamiento: se avisa que hay que volver a importarlo y no se descarga nada
+      const notice = s.surveyFile ? `La escena usaba el levantamiento «${s.surveyFile}»: vuelve a importarlo.` : s.notice
       set({
         site: s.site,
-        terrain: { area: s.area, source: s.demSource, dem: null, status: { state: 'idle', warn: s.notice } },
+        terrain: { area: s.area, source: s.demSource, dem: null, survey: null, status: { state: 'idle', warn: notice } },
         curvas: { ...state.curvas, contourInterval: s.contourInterval, indexEvery: s.indexEvery },
         sombras: { ...state.sombras, terrainMode: s.terrainMode, lot: s.lot, edges: s.edges, profileId: s.profileId, maxHeight: s.maxHeight },
       })
-      if (s.area) return loadTerrain(s.area, s.demSource, { interval: s.contourInterval, notice: s.notice })
+      if (s.surveyFile) return
+      if (s.area) return loadTerrain(s.area, s.demSource, { interval: s.contourInterval, notice })
       return ensureSiteTerrain()
     },
   }

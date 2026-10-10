@@ -29,6 +29,8 @@ interface SceneFileV2 extends Omit<SceneFileV1, 'version' | 'areaSize' | 'cell'>
 export interface SceneFileV3 extends Omit<SceneFileV2, 'version'> {
   version: 3
   terrainMode: TerrainMode
+  /** Nombre del DXF si el terreno era un levantamiento importado (el archivo no se incluye). */
+  surveyFile?: string
 }
 
 /** Escena en el marco local del sitio, lista para cargar en la app. */
@@ -43,6 +45,7 @@ export interface Scene {
   profileId: PerfilNormativo['id']
   maxHeight: number
   edges: EdgeSetting[]
+  surveyFile?: string
   /** Aviso para el usuario (p. ej. una fuente que ya no está disponible). */
   notice?: string
 }
@@ -62,6 +65,7 @@ export function serializeScene(s: Scene): SceneFileV3 {
     profileId: s.profileId,
     maxHeight: s.maxHeight,
     edges: s.edges,
+    ...(s.surveyFile ? { surveyFile: s.surveyFile } : {}),
   }
 }
 
@@ -91,5 +95,6 @@ export function parseScene(text: string): Scene {
     profileId: f.profileId,
     maxHeight: f.maxHeight,
     edges: f.edges,
+    surveyFile: f.version === 3 ? f.surveyFile : undefined,
   }
 }

@@ -95,6 +95,33 @@ describe('store común', () => {
     expect(calls[1].area.minX).toBeGreaterThan(200)
   })
 
+  it('un levantamiento importado pasa a ser el terreno compartido; descargar un área lo reemplaza', async () => {
+    const { l, calls } = loaders()
+    const st = createAppStore(l)
+    const area = { minX: -30, minY: -30, maxX: 30, maxY: 30 }
+    const grid = rectGrid(area, 0.25, { source: 'Levantamiento (x.dxf)', kind: 'levantamiento', nominalResolutionM: 10 }, (x) => 100 + x / 10)
+    st.actions.importSurvey({ grid, area, info: { fileName: 'x.dxf', coords: 'local', layers: ['CN'], points: 10, triangles: 8, zMin: 97, zMax: 103 } })
+    expect(st.getState().terrain.survey?.fileName).toBe('x.dxf')
+    expect(st.getState().curvas.contourInterval).toBe(0.5) // levantamiento: mínima 0,5 m; 6 m de desnivel → 12 curvas
+
+    // en sombras, «Levantamiento importado» usa esa grilla y no descarga nada
+    await st.actions.setTerrainMode('levantamiento')
+    await st.actions.setLot(lotFromDimensions(20, 20))
+    expect(calls).toHaveLength(0)
+    // «Terreno del sitio» no confunde el levantamiento con el terreno descargado: pide el del sitio
+    await st.actions.setTerrainMode('sitio')
+    expect(calls).toHaveLength(1)
+    expect(st.getState().terrain.survey).toBeNull()
+  })
+
+  it('abrir una escena que usaba un levantamiento avisa y no descarga', async () => {
+    const { l, calls } = loaders()
+    const st = createAppStore(l)
+    await st.actions.openScene({ ...st.actions.currentScene(), area: squareRect(60), surveyFile: 'plano.dxf' })
+    expect(calls).toHaveLength(0)
+    expect(st.getState().terrain.status.warn).toMatch(/plano\.dxf.*vuelve a importarlo/)
+  })
+
   it('abrir una escena conserva la equidistancia guardada', async () => {
     const { l } = loaders()
     const st = createAppStore(l)
