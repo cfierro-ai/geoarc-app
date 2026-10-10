@@ -14,7 +14,30 @@ export async function centroMapa(page: Page) {
   return { cx: box.x + box.width / 2, cy: box.y + box.height / 2 }
 }
 
-/** Dibuja el área con dos clics en esquinas opuestas, a ±d px del centro del mapa (a zoom 17, ~0,93 m/px en Temuco). */
+const TEMUCO = { lon: -72.5985, lat: -38.739 }
+
+/**
+ * Intercepta Terrarium (sin red externa) con un plano inclinado continuo entre teselas: 200 m en Temuco, sube
+ * 2 m/píxel al este y 1 m/píxel al sur. Copernicus se aborta. Devuelve los contadores de peticiones.
+ */
+export async function interceptarTerrarium(page: Page) {
+  const n = { terrarium: 0, copernicus: 0 }
+  await page.route('https://copernicus-dem-30m.s3.amazonaws.com/**', (r) => {
+    n.copernicus++
+    return r.abort('failed')
+  })
+  await page.route('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/**', (r) => {
+    n.terrarium++
+    const [z, x, y] = new URL(r.request().url()).pathname.match(/(\d+)\/(\d+)\/(\d+)\.png$/)!.slice(1).map(Number)
+    const ref = pixelGlobal(TEMUCO.lon, TEMUCO.lat, z)
+    // el valor de cada píxel es el de su centro (i + 0,5)
+    const body = terrariumPng((i, j) => 200 + 2 * (x * 256 + i + 0.5 - ref.x) + (y * 256 + j + 0.5 - ref.y))
+    return r.fulfill({ status: 200, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body })
+  })
+  return n
+}
+
+/** Dibuja el área con dos clics en esquinas opuestas, a ±d px del centro del mapa (a zoom 17, ~0,47 m/px en Temuco). */
 export async function dibujarArea(page: Page, d = 100) {
   const { cx, cy } = await centroMapa(page)
   await page.getByRole('button', { name: /Dibujar área en el mapa|Redibujar área/ }).click()

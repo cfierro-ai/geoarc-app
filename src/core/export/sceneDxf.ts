@@ -21,11 +21,13 @@ export interface SceneForDxf {
 
 /**
  * DXF georreferenciado en UTM (huso del sitio, WGS84), metros.
- * Capas: CURVAS, CURVAS_MAESTRAS, ETIQUETAS (TEXT con la cota sobre las maestras), AREA (rectángulo de extracción,
- * cota 0) y, si hay lote, LOTE y ENVOLVENTE (malla 3DFACE).
+ * Capas: CURVAS, CURVAS_MAESTRAS, ETIQUETAS (TEXT con la cota sobre las maestras) y AREA (rectángulo de extracción,
+ * cota 0) cuando hay terreno; LOTE y ENVOLVENTE (malla 3DFACE) cuando hay lote. Un estudio en plano no lleva curvas.
  */
 export function sceneToDxf(s: SceneForDxf): string {
-  const w = new DxfWriter().addLayer('CURVAS', 8).addLayer('CURVAS_MAESTRAS', 7).addLayer('ETIQUETAS', 7).addLayer('AREA', 3)
+  const w = new DxfWriter()
+  if (s.contours.length || s.area) w.addLayer('CURVAS', 8).addLayer('CURVAS_MAESTRAS', 7).addLayer('ETIQUETAS', 7)
+  if (s.area) w.addLayer('AREA', 3)
   const U = (p: XY, z: number) => ({ ...s.frame.toUTM(p), z })
 
   // altura de texto según el tamaño del área (o de las curvas si no hay área)

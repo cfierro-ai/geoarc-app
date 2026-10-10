@@ -5,7 +5,7 @@ import { gridCells, rectCenter, type Rect } from './area'
  * Celda (i, j) tiene su centro en (x0 + i·cell, y0 + j·cell). j crece hacia el norte.
  * Valores faltantes = NaN.
  */
-export type DemKind = 'DSM' | 'DTM' | 'sintético' | 'levantamiento'
+export type DemKind = 'DSM' | 'DTM' | 'sintético' | 'levantamiento' | 'plano'
 
 export interface DemMeta {
   /** Nombre legible de la fuente, p. ej. "Copernicus GLO-30". */

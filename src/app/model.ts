@@ -2,6 +2,7 @@ import type { LonLat, XY } from '../core/geo/local'
 import type { EdgeRule } from '../core/envelope/envelope'
 import type { EdgeRole, PerfilNormativo } from '../core/normativa/perfiles'
 import { reglaPorRol } from '../core/normativa/perfiles'
+import { lotFromDimensions } from '../core/envelope/lote'
 
 export type DemSourceId = 'copernicus' | 'terrarium' | 'sintetico'
 
@@ -14,14 +15,14 @@ export interface DemSourceInfo {
 }
 
 export const DEM_SOURCES: DemSourceInfo[] = [
-  { id: 'terrarium', label: 'Terrarium / SRTM (automático)', hint: 'Se descarga solo al cerrar el área. Global; ~30 m en Chile; referencial.' },
+  { id: 'terrarium', label: 'Terrarium / SRTM (automático)', hint: 'Se descarga solo. Global; ~30 m en Chile; referencial.' },
   {
     id: 'copernicus',
     label: 'Copernicus GLO-30 (DSM)',
     hint: 'Superficie: incluye árboles y edificios. Su servidor no permite lectura desde el navegador (CORS).',
     disabled: 'requiere proxy',
   },
-  { id: 'sintetico', label: 'Ladera sintética (sin conexión)', hint: 'Terreno inventado, para clases sin internet y pruebas. Se genera en el área dibujada.' },
+  { id: 'sintetico', label: 'Ladera sintética (sin conexión)', hint: 'Terreno inventado, para clases sin internet y pruebas.' },
 ]
 
 export const isSourceAvailable = (id: DemSourceId) => !DEM_SOURCES.find((d) => d.id === id)?.disabled
@@ -56,17 +57,25 @@ export function defaultEdges(n: number, p: PerfilNormativo): EdgeSetting[] {
 
 /** Lote de ejemplo: 20 × 35 m girado 15°, centrado en el sitio. */
 export function exampleLot(): XY[] {
-  const w = 20
-  const d = 35
-  const a = (15 * Math.PI) / 180
-  const c = Math.cos(a)
-  const s = Math.sin(a)
-  return [
-    { x: -w / 2, y: -d / 2 },
-    { x: w / 2, y: -d / 2 },
-    { x: w / 2, y: d / 2 },
-    { x: -w / 2, y: d / 2 },
-  ].map((p) => ({ x: p.x * c - p.y * s, y: p.x * s + p.y * c }))
+  return lotFromDimensions(20, 35, 15)
+}
+
+export type View = 'mapa' | '3d'
+
+/** Terreno del estudio de sombras. */
+export type TerrainMode = 'plano' | 'sitio' | 'levantamiento'
+
+export const TERRAIN_MODES: { id: TerrainMode; label: string; hint: string; disabled?: string }[] = [
+  { id: 'plano', label: 'Plano (cota 0)', hint: 'Sin topografía: la envolvente «de libro». No necesita conexión.' },
+  { id: 'sitio', label: 'Terreno del sitio', hint: 'Terreno real alrededor del lote: se descarga solo (o se reutiliza el del módulo de curvas).' },
+  { id: 'levantamiento', label: 'Levantamiento importado', hint: 'DXF de un levantamiento topográfico.', disabled: 'próximamente' },
+]
+
+/** Estado de la carga del terreno. */
+export interface DemStatus {
+  state: 'idle' | 'loading' | 'error'
+  msg?: string
+  warn?: string
 }
 
 export const TEMUCO: LonLat = { lon: -72.5985, lat: -38.739 }
