@@ -1,6 +1,7 @@
 import type { LocalFrame, LonLat } from '../geo/local'
 import type { HeightGrid } from './grid'
-import { localSquareBBox, resampleToLocal, type GeoSampler } from './resample'
+import type { Rect } from './area'
+import { localRectBBox, resampleToLocal, type GeoSampler } from './resample'
 
 /**
  * Terrarium (AWS Terrain Tiles / Mapzen). Global, PNG RGB.
@@ -33,14 +34,35 @@ async function loadTileRGBA(z: number, x: number, y: number): Promise<Uint8Clamp
   return ctx.getImageData(0, 0, bmp.width, bmp.height).data
 }
 
-/** Carga Terrarium para el cuadrado local y lo remuestrea a la grilla métrica. Solo navegador. */
+const EARTH_CIRCUMFERENCE = 40075016.686
+/** Zoom máximo que se pide: en Chile el dato es ~30 m y z14 ya da píxeles de ~7 m. */
+export const TERRARIUM_MAX_ZOOM = 14
+/** Resolución del dato de origen en Chile (SRTM 1″). */
+const TERRARIUM_DATA_RES = 30
+
+/** Tamaño en terreno (m) de un píxel de tesela de 256 px al zoom z y latitud dada. */
+export function terrariumPixelSize(z: number, lat: number): number {
+  return (EARTH_CIRCUMFERENCE * Math.cos((lat * Math.PI) / 180)) / (256 * 2 ** z)
+}
+
+/**
+ * Zoom más bajo cuyo píxel no es mayor que la celda pedida (tope TERRARIUM_MAX_ZOOM). Así un área grande pide pocas
+ * teselas y la cantidad de descargas queda acotada para cualquier área.
+ */
+export function terrariumZoom(cell: number, lat: number): number {
+  const z = Math.ceil(Math.log2((EARTH_CIRCUMFERENCE * Math.cos((lat * Math.PI) / 180)) / (256 * cell)) - 1e-9)
+  return Math.min(TERRARIUM_MAX_ZOOM, Math.max(1, z))
+}
+
+/** Carga Terrarium para el área local y la remuestrea a la grilla métrica. Solo navegador. */
 export async function loadTerrariumGrid(
   frame: LocalFrame,
-  size: number,
+  area: Rect,
   cell: number,
-  zoom = 14,
+  zoom = terrariumZoom(cell, frame.origin.lat),
 ): Promise<HeightGrid> {
-  const bb = localSquareBBox(frame, size)
+  const px = terrariumPixelSize(zoom, frame.origin.lat)
+  const bb = localRectBBox(frame, area, 2 * px)
   const tl = lonLatToTile({ lon: bb.west, lat: bb.north }, zoom)
   const br = lonLatToTile({ lon: bb.east, lat: bb.south }, zoom)
   const tx0 = Math.floor(tl.x)
@@ -80,10 +102,11 @@ export async function loadTerrariumGrid(
     return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy
   }
 
-  return resampleToLocal(frame, sampler, size, cell, {
+  return resampleToLocal(frame, sampler, area, cell, {
     source: 'Terrarium (AWS Terrain Tiles)',
     kind: 'DSM',
-    nominalResolutionM: 30,
-    notes: 'En Chile ≈ SRTM 1″ (~30 m). Mezcla de fuentes; sin actualización activa. Uso referencial.',
+    // si el área es grande se piden teselas más gruesas que el dato: manda el píxel
+    nominalResolutionM: Math.max(TERRARIUM_DATA_RES, Math.round(px)),
+    notes: `En Chile ≈ SRTM 1″ (~30 m). Teselas z${zoom} (~${Math.round(px)} m/píxel). Mezcla de fuentes; sin actualización activa. Uso referencial.`,
   })
 }

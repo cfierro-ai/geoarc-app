@@ -1,7 +1,8 @@
 import { fromUrl } from 'geotiff'
 import type { LocalFrame, LonLat } from '../geo/local'
 import type { HeightGrid } from './grid'
-import { localSquareBBox, rasterSampler, resampleToLocal, type GeoSampler } from './resample'
+import type { Rect } from './area'
+import { localRectBBox, rasterSampler, resampleToLocal, type GeoSampler } from './resample'
 
 /**
  * Copernicus DEM GLO-30 (AWS Open Data, COG). Global, ~30 m.
@@ -56,9 +57,12 @@ async function loadWindow(url: string, bb: { west: number; east: number; south: 
   return rasterSampler(data, c1 - c0 + 1, r1 - r0 + 1, lon0, lat0, rx, -ry, nd ?? undefined)
 }
 
-/** Carga Copernicus para el cuadrado local (puede tocar hasta 4 teselas) y remuestrea. Solo navegador. */
-export async function loadCopernicusGrid(frame: LocalFrame, size: number, cell: number): Promise<HeightGrid> {
-  const bb = localSquareBBox(frame, size)
+/**
+ * Carga Copernicus para el área local (puede tocar varias teselas de 1°) y remuestrea. Solo navegador.
+ * Hoy el navegador bloquea su lectura (el bucket no tiene CORS): requiere proxy. Ver docs/decisiones.md.
+ */
+export async function loadCopernicusGrid(frame: LocalFrame, area: Rect, cell: number): Promise<HeightGrid> {
+  const bb = localRectBBox(frame, area)
   const tiles: LoadedTile[] = []
   for (let lat = Math.floor(bb.south); lat <= Math.floor(bb.north); lat++)
     for (let lon = Math.floor(bb.west); lon <= Math.floor(bb.east); lon++) {
@@ -69,7 +73,7 @@ export async function loadCopernicusGrid(frame: LocalFrame, size: number, cell: 
     const t = tiles.find((tt) => tt.key === `${Math.floor(p.lat)}/${Math.floor(p.lon)}`)
     return t ? t.sampler(p) : NaN
   }
-  return resampleToLocal(frame, sampler, size, cell, {
+  return resampleToLocal(frame, sampler, area, cell, {
     source: 'Copernicus DEM GLO-30',
     kind: 'DSM',
     nominalResolutionM: 30,

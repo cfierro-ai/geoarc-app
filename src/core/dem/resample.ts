@@ -1,32 +1,30 @@
 import type { LocalFrame, LonLat } from '../geo/local'
-import { centeredGrid, type DemMeta, type HeightGrid } from './grid'
+import { rectGrid, type DemMeta, type HeightGrid } from './grid'
+import { rectCorners, type Rect } from './area'
 
 /** Función que entrega elevación (m) para una posición geográfica; NaN si no hay dato. */
 export type GeoSampler = (p: LonLat) => number
 
 /**
- * Remuestrea una fuente geográfica (lon/lat) a una grilla métrica local centrada en el origen del marco.
- * Cada celda local se proyecta inversamente a lon/lat y se muestrea la fuente ahí.
+ * Remuestrea una fuente geográfica (lon/lat) a una grilla métrica local sobre el área `area`.
+ * Cada nodo local se proyecta inversamente a lon/lat y se muestrea la fuente ahí.
  */
 export function resampleToLocal(
   frame: LocalFrame,
   sampler: GeoSampler,
-  size: number,
+  area: Rect,
   cell: number,
   meta: DemMeta,
 ): HeightGrid {
-  return centeredGrid(size, cell, meta, (x, y) => sampler(frame.toLonLat({ x, y })))
+  return rectGrid(area, cell, meta, (x, y) => sampler(frame.toLonLat({ x, y })))
 }
 
-/** Caja geográfica que cubre un cuadrado local de lado `size` centrado en el origen (con margen). */
-export function localSquareBBox(frame: LocalFrame, size: number, marginM = 60) {
-  const h = size / 2 + marginM
-  const corners = [
-    frame.toLonLat({ x: -h, y: -h }),
-    frame.toLonLat({ x: h, y: -h }),
-    frame.toLonLat({ x: h, y: h }),
-    frame.toLonLat({ x: -h, y: h }),
-  ]
+/** Caja geográfica que cubre el rectángulo local `area` ampliado en `marginM` por lado. */
+export function localRectBBox(frame: LocalFrame, area: Rect, marginM = 60) {
+  const m = marginM
+  const corners = rectCorners({ minX: area.minX - m, minY: area.minY - m, maxX: area.maxX + m, maxY: area.maxY + m }).map(
+    (p) => frame.toLonLat(p),
+  )
   return {
     west: Math.min(...corners.map((c) => c.lon)),
     east: Math.max(...corners.map((c) => c.lon)),
@@ -35,7 +33,7 @@ export function localSquareBBox(frame: LocalFrame, size: number, marginM = 60) {
   }
 }
 
-export type BBox = ReturnType<typeof localSquareBBox>
+export type BBox = ReturnType<typeof localRectBBox>
 
 /**
  * Muestreador bilineal sobre un raster geográfico regular.

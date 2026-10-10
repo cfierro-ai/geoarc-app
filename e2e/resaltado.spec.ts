@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { dibujarArea, usarLaderaSintetica } from './util'
 
 /**
  * Lee el último cuadro dibujado (el canvas usa preserveDrawingBuffer): una firma de todos los píxeles y cuántos
@@ -36,8 +37,8 @@ const cuadro = (page: Page) =>
  */
 test('vista 3D sin planos de rasante: el resaltado del lado 2 se dibuja', async ({ page }) => {
   await page.goto('/')
-  await page.getByLabel('Fuente de elevación').selectOption('sintetico')
-  await page.getByRole('button', { name: 'Cargar terreno' }).click()
+  await usarLaderaSintetica(page)
+  await dibujarArea(page)
   await expect(page.getByTestId('dem-info')).toContainText('Ladera sintética')
   await page.getByRole('button', { name: 'Lote de ejemplo' }).click()
   await expect(page.getByTestId('volume')).not.toHaveText('0 m³')
