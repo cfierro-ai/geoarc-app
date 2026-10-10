@@ -179,8 +179,8 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
   secuencia y una respuesta vieja se descarta. Si falla, el panel ofrece «Reintentar».
 - **Terrarium con zoom adaptativo:** se pide el zoom más bajo cuyo píxel no supera la celda (tope z14). Un área grande
   pide pocas teselas. Si el píxel supera 30 m, `nominalResolutionM` pasa a ser el tamaño del píxel.
-- **Escala confiable** (`src/core/contours/escala.ts`, único lugar del criterio; es cartográfico y docente, no
-  normativo):
+- **Escala confiable** — *reemplazado el mismo día por el criterio de Chris (sección siguiente)*
+  (`src/core/contours/escala.ts`, único lugar del criterio; es cartográfico y docente, no normativo):
   - Escala: regla de Tobler (1987): denominador = 2 000 × resolución. Un dato de 30 m ⇒ **1:60.000**.
   - Equidistancia mínima sugerida: ≈ denominador / 2 500 (series topográficas usuales: 1:25.000 → 10 m;
     1:50.000 → 20 m), redondeada hacia arriba en la serie 1–2–2,5–5. Para Terrarium ⇒ **25 m**.
@@ -206,3 +206,56 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
 ### Pendientes
 - Importar levantamiento DXF (backlog alta #4).
 - Chris: confirmar el criterio de escala y equidistancia, y la interpretación del tope 2 000 × 2 000.
+  → Criterio reemplazado (sección siguiente). El tope 2 000 × 2 000 sigue sin confirmar.
+
+## 2026-10-10 · v0.2 · Criterio de equidistancia, navegación y Estudio de sombras (Chris)
+
+### Criterio de equidistancia (reemplaza a Tobler)
+- Con Tobler, Terrarium daba 1:60.000 y 25 m: casi sin curvas en un área de sitio. Chris lo cambia por:
+  - **Equidistancia mínima confiable** según la resolución real del dato: ≥ 20 m (SRTM/Terrarium) → 5 m;
+    5–20 m → 2 m; < 5 m → 1 m; levantamiento → 0,5 m.
+  - **Preselección:** la menor de {0,5; 1; 2; 5; 10; 20; 50} que sea ≥ la mínima confiable y dé entre 5 y 20 curvas
+    según el desnivel del área (curvas = desnivel / equidistancia). Caso de control: 5 ha, 25 m de desnivel,
+    Terrarium → 5 m, 5 curvas.
+  - Las equidistancias menores siguen disponibles, con la advertencia de precisión aparente de v0.1.
+  - La etiqueta de escala pasa a ser **informativa**: «dato de ~30 m: útil para ladera y barrio, no para el lote».
+- Implementación: `src/core/contours/escala.ts`. Si ninguna candidata da 5–20 curvas, se toma la primera que no pasa de
+  20 (en un área casi plana, la mínima confiable); si todas pasan de 20, la mayor (50 m).
+- La preselección se recalcula **en cada carga** de terreno, porque depende del desnivel del área (antes solo cuando
+  cambiaba la resolución). Al abrir una escena manda la equidistancia guardada.
+- **Textos propuestos, por confirmar con Chris** (solo dio el de ≥ 20 m): 5–20 m «útil para barrio y manzana; para el
+  lote, solo como referencia»; < 5 m «útil para manzana y lote»; levantamiento «útil para el lote y el proyecto»;
+  ladera sintética «terreno inventado: sirve para practicar, no describe un lugar real».
+
+### Navegación y estado compartido
+- Inicio con dos tarjetas («Curvas de nivel», «Estudio de sombras») y rutas `/curvas` y `/sombras`. El enrutador es
+  propio (`src/app/router.ts`, History API con la base del despliegue); no se agregó dependencia.
+- GitHub Pages no reescribe rutas: un plugin de `vite.config.ts` copia `index.html` en `curvas/index.html`,
+  `sombras/index.html` (responden 200) y `404.html` (respaldo). El favicon pasó a ruta absoluta (`/favicon.svg`, Vite
+  le antepone la base); con la relativa fallaba desde `/curvas/`.
+- **Store común** (`src/app/store.ts`, `useSyncExternalStore`, sin dependencias): `site` y `terrain` son compartidos;
+  `curvas` y `sombras` son de cada módulo y se conservan al cambiar de ruta. La lógica de carga (secuencia contra
+  respuestas viejas, preselección) vive en el store y se prueba en Node con cargadores simulados.
+- Cambiar de sitio limpia el terreno y el lote (están en el marco local del sitio).
+- `.geoarc` pasa a v3 (agrega el terreno del estudio). Un v2 con lote y área se abre sobre el terreno del sitio, que
+  era como se calculaba; sin lote, en plano.
+
+### Estudio de sombras
+- Es el antiguo flujo lote → norma → envolvente, ahora como módulo propio.
+- **Terreno:** «Plano (cota 0)» por defecto (sin red); «Terreno del sitio» reutiliza el terreno compartido si cubre el
+  lote con 10 m de holgura, y si no, lo descarga solo alrededor del lote (su caja + max(30 m, medio lado mayor));
+  «Levantamiento importado» se muestra deshabilitado («próximamente») hasta el importador DXF.
+- Si el lote queda fuera del área dibujada en Curvas, el estudio descarga terreno nuevo alrededor del lote y ese pasa a
+  ser el terreno compartido (Curvas mostrará esa área).
+- **Lote por dimensiones:** ancho (frente, lado 1), fondo y giro antihorario, centrado en el sitio. El lote de ejemplo
+  es el mismo constructor (20 × 35, 15°).
+- **Caso dorado:** en plano, lote por dimensiones 20 × 20 con 4 deslindes a 70° y sin altura máxima → techo al centro =
+  10·tan 70°, igual que el test del núcleo (`lote.test.ts`). En la UI se ve 27,1 m: es la celda de cálculo más central
+  (a 0,125 m del centro), 9,875·tan 70° (`e2e/sombras.spec.ts`).
+- Vista 3D: el encuadre considera también la altura de la envolvente (sin altura máxima quedaba cortada). Solo se
+  reencuadra al cambiar lote o terreno, o si la envolvente crece y quedaría cortada; editar la norma no reinicia la órbita.
+- DXF del estudio: en plano no lleva capas de curvas ni AREA; sobre el terreno del sitio, sí.
+
+### Ramas y PR
+- El PR #1 seguía abierto (CI en verde) cuando se pidió continuar. La mezcla sin revisión quedó bloqueada por los
+  permisos de la sesión, así que este trabajo va en `v0.2-sombras`, apilado sobre `v0.2-modulos`: mezclar #1 antes que #2.
