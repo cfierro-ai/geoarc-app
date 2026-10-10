@@ -1,20 +1,14 @@
 import { expect, test } from '@playwright/test'
+import { centroMapa } from './util'
 
 /**
  * Regresión del bug del handoff v1.2: el lote dibujado debe quedar donde se hace clic.
  * Se dibuja un cuadrado en pantalla y se comprueba que el polígono resultante coincide
- * (superficie según escala del mapa y vértices sobre los puntos cliqueados).
+ * (superficie según escala del mapa y vértices sobre los puntos cliqueados). En plano: no hace falta terreno.
  */
 test('dibujar lote en el mapa: el polígono queda bajo el cursor', async ({ page }) => {
-  await page.goto('/')
-  await page.getByLabel('Fuente de elevación').selectOption('sintetico')
-  await page.getByRole('button', { name: 'Cargar terreno' }).click()
-  await expect(page.getByTestId('dem-info')).toBeVisible()
-  await expect(page.getByTestId('map')).toHaveAttribute('data-ready', 'true') // el mapa se crea tras cargar el estilo base
-
-  const box = (await page.getByTestId('map').boundingBox())!
-  const cx = box.x + box.width / 2
-  const cy = box.y + box.height / 2
+  await page.goto('/sombras')
+  const { cx, cy } = await centroMapa(page)
   const d = 60
   await page.getByRole('button', { name: 'Dibujar en mapa' }).click()
   for (const [dx, dy] of [[-d, -d], [d, -d], [d, d], [-d, d]]) {

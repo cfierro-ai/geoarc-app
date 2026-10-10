@@ -25,7 +25,7 @@ test('buscador: si Nominatim limita, responde Photon', async ({ page }) => {
     }),
   )
 
-  await page.goto('/')
+  await page.goto('/curvas')
   await page.getByPlaceholder('Dirección o «lat, lon»').fill('Plaza de Armas, Santiago')
   await page.getByRole('button', { name: 'Buscar' }).click()
 
@@ -36,5 +36,5 @@ test('buscador: si Nominatim limita, responde Photon', async ({ page }) => {
   await page.screenshot({ path: 'e2e/capturas/07-buscador-photon.png' })
 
   await resultado.click()
-  await expect(page.getByTestId('panel')).toContainText('-33.43780, -70.65060')
+  await expect(page.getByTestId('panel-curvas')).toContainText('-33.43780, -70.65060')
 })

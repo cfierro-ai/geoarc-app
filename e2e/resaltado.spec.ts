@@ -35,10 +35,7 @@ const cuadro = (page: Page) =>
  * objetos, lo que en R3F 9.8 no pide cuadro. En ambos casos la vista debe redibujarse.
  */
 test('vista 3D sin planos de rasante: el resaltado del lado 2 se dibuja', async ({ page }) => {
-  await page.goto('/')
-  await page.getByLabel('Fuente de elevación').selectOption('sintetico')
-  await page.getByRole('button', { name: 'Cargar terreno' }).click()
-  await expect(page.getByTestId('dem-info')).toContainText('Ladera sintética')
+  await page.goto('/sombras') // en plano (por defecto)
   await page.getByRole('button', { name: 'Lote de ejemplo' }).click()
   await expect(page.getByTestId('volume')).not.toHaveText('0 m³')
 
