@@ -158,3 +158,146 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
   por defecto. Tests unitarios con fetch simulado y e2e con Nominatim respondiendo 429.
 - **Atribuciones:** el mapa muestra la del mapa base activo (control no compacto), la lista de resultados indica qué
   buscador respondió, y el README las detalla todas.
+
+## 2026-10-10 · v0.2 · Módulo Curvas de nivel (Chris)
+
+### Pedido
+- Flujo del profesor: **ubicar el sitio → dibujar el área → las curvas aparecen**. El terreno se descarga solo
+  (Terrarium). El profesor no elige ni carga un DEM, salvo «ladera sintética» si no hay internet (o un levantamiento
+  DXF, todavía pendiente). El selector de fuente queda en «Opciones avanzadas», plegado.
+
+### Decisiones de implementación
+- **Área de extracción:** rectángulo de dos clics alineado con la cuadrícula **UTM** del sitio, no con el norte
+  geográfico, para que el DXF quede alineado con los ejes del CAD. En el mapa se ve girado según la convergencia de
+  meridianos (~1,5° en Temuco, huso 18). La vista previa muestra el tamaño en metros y hectáreas. Lado mínimo 10 m;
+  máximo 20 km (tope de cordura, no pedido; `MAX_AREA_SIDE`). Esc cancela.
+- **Celda automática** (`src/core/dem/area.ts`): «~250 celdas por lado» se interpreta sobre el lado **menor**, y
+  «cap 2 000 × 2 000» como tope de celdas por lado de la grilla (pesa en áreas de proporción mayor a 8:1). La celda se
+  redondea a la serie 1–1,25–1,5–2–2,5–3–4–5–6–8 y nunca baja de 0,25 m. Si el tope quería decir 2 000 × 2 000 **m**
+  de área máxima, basta cambiar `MAX_AREA_SIDE`.
+- **Carga sin botón:** al cerrar el área, al cambiar de fuente o al abrir una escena. Cada carga lleva un número de
+  secuencia y una respuesta vieja se descarta. Si falla, el panel ofrece «Reintentar».
+- **Terrarium con zoom adaptativo:** se pide el zoom más bajo cuyo píxel no supera la celda (tope z14). Un área grande
+  pide pocas teselas. Si el píxel supera 30 m, `nominalResolutionM` pasa a ser el tamaño del píxel.
+- **Escala confiable** — *reemplazado el mismo día por el criterio de Chris (sección siguiente)*
+  (`src/core/contours/escala.ts`, único lugar del criterio; es cartográfico y docente, no normativo):
+  - Escala: regla de Tobler (1987): denominador = 2 000 × resolución. Un dato de 30 m ⇒ **1:60.000**.
+  - Equidistancia mínima sugerida: ≈ denominador / 2 500 (series topográficas usuales: 1:25.000 → 10 m;
+    1:50.000 → 20 m), redondeada hacia arriba en la serie 1–2–2,5–5. Para Terrarium ⇒ **25 m**.
+  - Se preselecciona al cargar el dato, y solo se vuelve a preseleccionar si cambia la resolución. Las equidistancias
+    menores siguen en el selector, marcadas «aparente», y se muestra el aviso de precisión aparente.
+  - **Por revisar con Chris:** con Terrarium, 25 m deja pocas curvas en un área del tamaño de un sitio. Es el mensaje
+    docente, pero puede preferir otro factor.
+- **Malla del dato:** líneas cada `nominalResolutionM`, en múltiplos desde el origen del marco. Muestra el **tamaño**
+  de la celda del dato, no la posición exacta de sus píxeles (SRTM es una grilla de 1″ en lon/lat).
+- **DXF de curvas:** capas CURVAS, CURVAS_MAESTRAS, ETIQUETAS (TEXT centrado con la cota, alineado a la curva y
+  siempre legible) y AREA (polilínea 2D cerrada a cota 0). LOTE y ENVOLVENTE solo se agregan si hay lote. La altura de
+  texto es de 2,5 mm al imprimir el lado mayor del área en 400 mm (A3), es decir, lado / 160. Va un rótulo cada
+  ~40 alturas de texto. Se validó con ezdxf 1.4.4 (lectura estricta y auditoría: 0 errores, 0 arreglos). **Falta
+  abrirlo en AutoCAD LT / Revit.**
+- **Copernicus:** visible y deshabilitado («requiere proxy»). Una escena `.geoarc` que lo use se abre con Terrarium y
+  se avisa. `loadDem` conserva el respaldo Copernicus → Terrarium para cuando exista el proxy. Ya no cambia el
+  selector: la carga ahora se dispara al cambiar de fuente.
+- **`.geoarc` v2:** el área se guarda como esquinas SO y NE en lon/lat (igual que el lote) y la celda ya no se guarda.
+  Los archivos v1 se siguen abriendo (su cuadrado centrado pasa a rectángulo).
+- **e2e:** `respaldo.spec.ts` (elegir Copernicus en el selector) deja de tener sentido. Lo reemplaza `curvas.spec.ts`,
+  que intercepta Terrarium con un plano inclinado continuo entre teselas y verifica que Copernicus no se pida nunca.
+
+### Pendientes
+- Importar levantamiento DXF (backlog alta #4).
+- Chris: confirmar el criterio de escala y equidistancia, y la interpretación del tope 2 000 × 2 000.
+  → Criterio reemplazado (sección siguiente). El tope 2 000 × 2 000 sigue sin confirmar.
+
+## 2026-10-10 · v0.2 · Criterio de equidistancia, navegación y Estudio de sombras (Chris)
+
+### Criterio de equidistancia (reemplaza a Tobler)
+- Con Tobler, Terrarium daba 1:60.000 y 25 m: casi sin curvas en un área de sitio. Chris lo cambia por:
+  - **Equidistancia mínima confiable** según la resolución real del dato: ≥ 20 m (SRTM/Terrarium) → 5 m;
+    5–20 m → 2 m; < 5 m → 1 m; levantamiento → 0,5 m.
+  - **Preselección:** la menor de {0,5; 1; 2; 5; 10; 20; 50} que sea ≥ la mínima confiable y dé entre 5 y 20 curvas
+    según el desnivel del área (curvas = desnivel / equidistancia). Caso de control: 5 ha, 25 m de desnivel,
+    Terrarium → 5 m, 5 curvas.
+  - Las equidistancias menores siguen disponibles, con la advertencia de precisión aparente de v0.1.
+  - La etiqueta de escala pasa a ser **informativa**: «dato de ~30 m: útil para ladera y barrio, no para el lote».
+- Implementación: `src/core/contours/escala.ts`. Si ninguna candidata da 5–20 curvas, se toma la primera que no pasa de
+  20 (en un área casi plana, la mínima confiable); si todas pasan de 20, la mayor (50 m).
+- La preselección se recalcula **en cada carga** de terreno, porque depende del desnivel del área (antes solo cuando
+  cambiaba la resolución). Al abrir una escena manda la equidistancia guardada.
+- **Textos propuestos, por confirmar con Chris** (solo dio el de ≥ 20 m): 5–20 m «útil para barrio y manzana; para el
+  lote, solo como referencia»; < 5 m «útil para manzana y lote»; levantamiento «útil para el lote y el proyecto»;
+  ladera sintética «terreno inventado: sirve para practicar, no describe un lugar real».
+
+### Navegación y estado compartido
+- Inicio con dos tarjetas («Curvas de nivel», «Estudio de sombras») y rutas `/curvas` y `/sombras`. El enrutador es
+  propio (`src/app/router.ts`, History API con la base del despliegue); no se agregó dependencia.
+- GitHub Pages no reescribe rutas: un plugin de `vite.config.ts` copia `index.html` en `curvas/index.html`,
+  `sombras/index.html` (responden 200) y `404.html` (respaldo). El favicon pasó a ruta absoluta (`/favicon.svg`, Vite
+  le antepone la base); con la relativa fallaba desde `/curvas/`.
+- **Store común** (`src/app/store.ts`, `useSyncExternalStore`, sin dependencias): `site` y `terrain` son compartidos;
+  `curvas` y `sombras` son de cada módulo y se conservan al cambiar de ruta. La lógica de carga (secuencia contra
+  respuestas viejas, preselección) vive en el store y se prueba en Node con cargadores simulados.
+- Cambiar de sitio limpia el terreno y el lote (están en el marco local del sitio).
+- `.geoarc` pasa a v3 (agrega el terreno del estudio). Un v2 con lote y área se abre sobre el terreno del sitio, que
+  era como se calculaba; sin lote, en plano.
+
+### Estudio de sombras
+- Es el antiguo flujo lote → norma → envolvente, ahora como módulo propio.
+- **Terreno:** «Plano (cota 0)» por defecto (sin red); «Terreno del sitio» reutiliza el terreno compartido si cubre el
+  lote con 10 m de holgura, y si no, lo descarga solo alrededor del lote (su caja + max(30 m, medio lado mayor));
+  «Levantamiento importado» se muestra deshabilitado («próximamente») hasta el importador DXF.
+- Si el lote queda fuera del área dibujada en Curvas, el estudio descarga terreno nuevo alrededor del lote y ese pasa a
+  ser el terreno compartido (Curvas mostrará esa área).
+- **Lote por dimensiones:** ancho (frente, lado 1), fondo y giro antihorario, centrado en el sitio. El lote de ejemplo
+  es el mismo constructor (20 × 35, 15°).
+- **Caso dorado:** en plano, lote por dimensiones 20 × 20 con 4 deslindes a 70° y sin altura máxima → techo al centro =
+  10·tan 70°, igual que el test del núcleo (`lote.test.ts`). En la UI se ve 27,1 m: es la celda de cálculo más central
+  (a 0,125 m del centro), 9,875·tan 70° (`e2e/sombras.spec.ts`).
+- Vista 3D: el encuadre considera también la altura de la envolvente (sin altura máxima quedaba cortada). Solo se
+  reencuadra al cambiar lote o terreno, o si la envolvente crece y quedaría cortada; editar la norma no reinicia la órbita.
+- DXF del estudio: en plano no lleva capas de curvas ni AREA; sobre el terreno del sitio, sí.
+
+### Ramas y PR
+- El PR #1 seguía abierto (CI en verde) cuando se pidió continuar. La mezcla sin revisión quedó bloqueada por los
+  permisos de la sesión, así que este trabajo va en `v0.2-sombras`, apilado sobre `v0.2-modulos`: mezclar #1 antes que #2.
+
+## 2026-10-10 · v0.2 · Importador de levantamiento DXF (Chris)
+
+### Pedido
+- LWPOLYLINE (cota en el código 38), POLYLINE/VERTEX 3D y LINE con Z. Informar capas y rango de cotas.
+- Coordenadas locales por defecto (centra el dibujo en el sitio); «UTM del sitio» opcional.
+- TIN con delaunator y muestreo por triángulo → `HeightGrid` con `meta.kind = 'levantamiento'`. Alimenta a los dos módulos.
+
+### Decisiones de implementación
+- **Lector** (`src/core/survey/dxfRead.ts`): propio, por pares código/valor (LF o CRLF), solo sección ENTITIES y espacio
+  modelo. Además de lo pedido lee POLYLINE 2D (cota = 30 del encabezado) y POINT con Z, frecuentes en levantamientos.
+  Se ignoran e informan: mallas, entidades de espacio papel, textos, bloques, etc. Los arcos de polilínea (bulge) se
+  toman como tramos rectos. Extrusión (0, 0, −1) de dibujos espejados: x y la cota cambian de signo.
+- **Capas por defecto:** todas, menos las que están enteras a cota 0 si otras tienen cota (deslindes, ejes y textos
+  dibujados en planta hundirían el terreno). El profesor puede marcar o desmarcar capas.
+- **TIN** (`src/core/survey/tin.ts`): las polilíneas y líneas se densifican (tramos de hasta 2 celdas, entre 0,25 y
+  2 m) para que el TIN siga las curvas. Delaunay con `delaunator` 5.1.0 (mapbox, ISC, sin otra dependencia que
+  `robust-predicates`).
+- **Pelado del borde:** desde el contorno convexo hacia adentro se quitan los triángulos cuya arista mayor supera 5 ×
+  la separación típica. Así un levantamiento en L no se rellena con triángulos largos. La separación típica es la
+  mediana de la arista MAYOR de cada triángulo (en un TIN de curvas, la distancia entre curvas). La mediana de todas
+  las aristas fallaba: la densificación la llena de tramos cortos a lo largo de las curvas y el pelado se comía el TIN
+  completo (detectado midiendo: 370 de ~1 500 triángulos y 87 % de nodos sin dato).
+- **Muestreo por triángulo:** cada triángulo asigna su interpolación lineal a los nodos que contiene. Los nodos a
+  menos de 1,5 celdas por fuera se extrapolan, acotados a las cotas del triángulo, porque la bilineal en un punto del
+  borde usa nodos hasta √2 celdas afuera. Sin la cota, el borde inventaba cotas (99,8 m con la curva más baja en 100 m).
+- `nominalResolutionM` del levantamiento = separación típica entre datos (no la celda de la grilla). La equidistancia
+  mínima del levantamiento es 0,5 m (criterio de Chris).
+- **Terreno compartido:** importar el levantamiento lo deja como terreno de la app (`terrain.survey`). Curvas lo dibuja
+  y el Estudio de sombras lo usa en «Levantamiento importado». Dibujar un área nueva o cambiar de fuente lo reemplaza
+  por terreno descargado. «Terreno del sitio» no confunde el levantamiento con el terreno descargado: pide este último
+  alrededor del lote.
+- El `.geoarc` no incluye el DXF. Guarda su nombre (`surveyFile`), y al abrir la escena se avisa que hay que volver a
+  importarlo; no se descarga nada en su lugar.
+- **Caso dorado:** un DXF sintético con 3 curvas concéntricas (100, 102 y 104 m), una por tipo de entidad
+  (LWPOLYLINE, POLYLINE 3D, LINE). La grilla reproduce las cotas sobre las curvas con error máximo de **0,0125 m**
+  (límite 0,05 m). En e2e se importa un cerro de 5 curvas con un deslinde a cota 0 y un texto.
+
+### Pendientes
+- Abrir un levantamiento real de Chris (AutoCAD / Civil 3D) para confirmar el lector con dibujos de oficina.
+- Backlog: arcos (bulge) y CIRCLE, 3DFACE, bloques de puntos (INSERT con atributos), unidades distintas de metros,
+  líneas de quiebre (TIN restringido a las curvas).

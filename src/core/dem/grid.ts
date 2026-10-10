@@ -1,9 +1,11 @@
+import { gridCells, rectCenter, type Rect } from './area'
+
 /**
  * Grilla regular de elevaciones en el marco local (metros).
  * Celda (i, j) tiene su centro en (x0 + i·cell, y0 + j·cell). j crece hacia el norte.
  * Valores faltantes = NaN.
  */
-export type DemKind = 'DSM' | 'DTM' | 'sintético' | 'levantamiento'
+export type DemKind = 'DSM' | 'DTM' | 'sintético' | 'levantamiento' | 'plano'
 
 export interface DemMeta {
   /** Nombre legible de la fuente, p. ej. "Copernicus GLO-30". */
@@ -42,16 +44,16 @@ export function createGrid(
   return { nx, ny, cell, x0, y0, z, meta }
 }
 
-/** Grilla cuadrada centrada en el origen local, de lado `size` metros. */
-export function centeredGrid(
-  size: number,
+/** Grilla que cubre el rectángulo local `r`, centrada en él (puede excederlo en menos de media celda por borde). */
+export function rectGrid(
+  r: Rect,
   cell: number,
   meta: DemMeta,
   fn: (x: number, y: number) => number,
 ): HeightGrid {
-  const n = Math.max(2, Math.round(size / cell) + 1)
-  const half = ((n - 1) * cell) / 2
-  return createGrid(n, n, cell, -half, -half, meta, fn)
+  const { nx, ny } = gridCells(r, cell)
+  const c = rectCenter(r)
+  return createGrid(nx + 1, ny + 1, cell, c.x - (nx * cell) / 2, c.y - (ny * cell) / 2, meta, fn)
 }
 
 export function valueAt(g: HeightGrid, i: number, j: number): number {
