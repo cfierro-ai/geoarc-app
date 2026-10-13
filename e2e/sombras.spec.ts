@@ -13,7 +13,8 @@ test('sombras en plano: lote por dimensiones 20×20, rasante 70° → caso dorad
   await page.goto('/sombras')
 
   await expect(page.getByRole('radio', { name: /Plano \(cota 0\)/ })).toBeChecked()
-  await expect(page.getByRole('radio', { name: /Levantamiento importado/ })).toBeDisabled()
+  // solo dos terrenos: plano o el del sitio (2026-10-12, sin importador de levantamiento)
+  await expect(page.getByRole('radiogroup', { name: 'Terreno del estudio' }).getByRole('radio')).toHaveCount(2)
 
   await page.getByLabel('Ancho del lote').fill('20')
   await page.getByLabel('Fondo del lote').fill('20')

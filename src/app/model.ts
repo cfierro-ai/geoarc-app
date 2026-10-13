@@ -63,12 +63,11 @@ export function exampleLot(): XY[] {
 export type View = 'mapa' | '3d'
 
 /** Terreno del estudio de sombras. */
-export type TerrainMode = 'plano' | 'sitio' | 'levantamiento'
+export type TerrainMode = 'plano' | 'sitio'
 
-export const TERRAIN_MODES: { id: TerrainMode; label: string; hint: string; disabled?: string }[] = [
+export const TERRAIN_MODES: { id: TerrainMode; label: string; hint: string }[] = [
   { id: 'plano', label: 'Plano (cota 0)', hint: 'Sin topografía: la envolvente «de libro». No necesita conexión.' },
   { id: 'sitio', label: 'Terreno del sitio', hint: 'Terreno real alrededor del lote: se descarga solo (o se reutiliza el del módulo de curvas).' },
-  { id: 'levantamiento', label: 'Levantamiento importado', hint: 'DXF de un levantamiento topográfico.', disabled: 'próximamente' },
 ]
 
 /** Estado de la carga del terreno. */

@@ -162,18 +162,16 @@ export function SombrasModule() {
         <Section n={2} title="Terreno" done={!!grid}>
           <div className="space-y-1" role="radiogroup" aria-label="Terreno del estudio">
             {TERRAIN_MODES.map((m) => (
-              <label key={m.id} className={`flex items-start gap-2 text-xs ${m.disabled ? 'text-slate-400' : 'text-slate-700'}`}>
+              <label key={m.id} className="flex items-start gap-2 text-xs text-slate-700">
                 <input
                   type="radio"
                   name="terreno"
                   className="mt-0.5"
                   checked={terrainMode === m.id}
-                  disabled={!!m.disabled}
                   onChange={() => void actions.setTerrainMode(m.id)}
                 />
                 <span>
                   <b className="font-medium">{m.label}</b>
-                  {m.disabled && <> — {m.disabled}</>}
                   <span className="block text-slate-500">{m.hint}</span>
                 </span>
               </label>
