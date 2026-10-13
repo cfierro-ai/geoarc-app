@@ -307,6 +307,8 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
 - Altura: `height` (m); si no, `building:levels` × 3 m; sin dato, un piso (3 m). Se muestra el reparto en el panel.
   En el respaldo, `render_height` de OpenMapTiles (que usa otro criterio: 3,66 m por piso y 5 m sin dato).
 - Vías: todo `highway` salvo `proposed`, `razed` y `abandoned`.
+- Todo se recorta al área + 50 m (`recortarContexto`): las vías se cortan en el borde (Overpass entrega cada vía entera
+  y una tesela z14 cubre ~2 km); un edificio que toca el recuadro se conserva entero.
 - `.geoarc` v4 guarda el contexto en lon/lat con 7 decimales (~1 cm); al abrir la escena no se vuelve a pedir.
 
 ### DXF del contexto
@@ -329,3 +331,12 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
 ### Navegación de Curvas
 - Pasos: 1 Sitio · 2 Área y curvas · 3 Contexto · 4 Descargar («Descargar DXF (UTM)»). El PR #5 agrega ahí «Maqueta»
   y «Malla 3D».
+
+### Verificación con red real (build de producción local, Temuco, 253 × 190 m = 4,82 ha)
+- Terreno: Terrarium en 1,7 s; desnivel 41,2 m; equidistancia 5 m (8 curvas).
+- Contexto: Overpass respondió **504** (también desde un navegador normal, con cupos libres: el servidor estaba
+  saturado; a las 12:42 había respondido en 1,8 s) y entró el respaldo por teselas en ~12 s. La primera corrida mostró
+  1 180 edificaciones y 1 898 vías (teselas completas): de ahí el recorte. Con el recorte, 36 edificaciones y 75 vías.
+- DXF de 193 KB (ezdxf: 0 errores, 0 arreglos); `.geoarc` de 44 KB con el contexto.
+- Estudio de sombras sobre el terreno del sitio, lote de ejemplo: 14 edificaciones del contexto en la vista 3D.
+- Producción (GitHub Pages) se publica desde `main`: este PR se verifica allí después de mezclarlo.
