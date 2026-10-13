@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
 import { createLocalFrame, type LonLat, type XY } from '../../core/geo/local'
 import { gridStats } from '../../core/dem/grid'
-import { areaProblem, autoCell, dataGridLines, gridCells, rectFromCorners, rectSize } from '../../core/dem/area'
+import { areaProblem, autoCell, dataGridLines, gridCells, polygonProblem, rectFromCorners, rectSize } from '../../core/dem/area'
+import { clipIsolines, clipPolyline } from '../../core/contours/clip'
+import { area as polygonArea, cleanRing } from '../../core/envelope/polygon'
 import { contourLevels, isolines } from '../../core/contours/isolines'
 import {
   contarNiveles,
@@ -19,11 +21,13 @@ import { SiteSection } from '../../app/components/SiteSection'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
 import { btn, btnPrimary, input, ModulePanel, Note, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
-import { fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, type MapMode } from '../../app/model'
+import { fmt, fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, type MapMode } from '../../app/model'
 import { actions, useAppState } from '../../app/store'
 
 /**
  * Módulo Curvas de nivel. Flujo del profesor: ubicar el sitio → dibujar el área → las curvas aparecen.
+ * El área es un rectángulo (dos esquinas) o un polígono (clics + doble clic). Con polígono, el terreno se calcula sobre
+ * su rectángulo envolvente y las curvas (y la malla del dato) se recortan al polígono.
  * El terreno se descarga solo al cerrar el área; la fuente queda en «Opciones avanzadas».
  */
 export function CurvasModule() {
@@ -32,8 +36,11 @@ export function CurvasModule() {
   const curvas = useAppState((s) => s.curvas)
   const [mode, setMode] = useState<MapMode>('none')
   const [areaCorner, setAreaCorner] = useState<XY | null>(null)
+  /** Vértices del polígono en dibujo y, si al cerrarlo no sirve, por qué. */
+  const [polyDraft, setPolyDraft] = useState<XY[]>([])
+  const [polyProblem, setPolyProblem] = useState<string | null>(null)
   const frame = useMemo(() => createLocalFrame(site), [site])
-  const { area, dem } = terrain
+  const { area, polygon, dem } = terrain
   const { contourInterval, indexEvery, showDataGrid } = curvas
   const indexInterval = contourInterval * indexEvery
   const view = dem ? curvas.view : 'mapa'
@@ -42,14 +49,40 @@ export function CurvasModule() {
   const contours = useMemo(() => {
     if (!dem || !st) return []
     if (contarNiveles(st.min, st.max, contourInterval) > MAX_NIVELES) return []
-    return isolines(dem, contourLevels(st.min, st.max, contourInterval))
-  }, [dem, st, contourInterval])
-  const dataGrid = useMemo(() => (showDataGrid && dem && area ? dataGridLines(area, dem.meta.nominalResolutionM) : null), [showDataGrid, dem, area])
+    const all = isolines(dem, contourLevels(st.min, st.max, contourInterval))
+    return polygon ? clipIsolines(all, polygon) : all
+  }, [dem, st, contourInterval, polygon])
+  const dataGrid = useMemo(() => {
+    if (!showDataGrid || !dem || !area) return null
+    const lines = dataGridLines(area, dem.meta.nominalResolutionM)
+    if (!lines || !polygon) return lines
+    return lines.flatMap((l) => clipPolyline([l.a, l.b], false, polygon).map((t) => ({ a: t[0], b: t[t.length - 1] })))
+  }, [showDataGrid, dem, area, polygon])
 
   const cancel = useCallback(() => {
     setMode('none')
     setAreaCorner(null)
+    setPolyDraft([])
+    setPolyProblem(null)
   }, [])
+
+  const finishPolygon = () => {
+    const ring = cleanRing(polyDraft)
+    const problem = polygonProblem(ring)
+    if (problem) {
+      // se sigue dibujando: el aviso dice por qué no se cerró
+      setPolyDraft(ring)
+      return setPolyProblem(problem)
+    }
+    cancel()
+    void actions.setAreaPolygon(ring)
+  }
+
+  const startDrawing = (m: 'area' | 'poligono') => {
+    cancel()
+    setMode(m)
+    actions.setCurvas({ view: 'mapa' })
+  }
   useEscape(mode, cancel)
 
   const onPick = (p: LonLat) => {
@@ -63,11 +96,14 @@ export function CurvasModule() {
       if (areaProblem(r)) return // el aviso del mapa explica por qué; se espera otro clic
       cancel()
       void actions.loadTerrain(r)
+    } else if (mode === 'poligono') {
+      setPolyProblem(null)
+      setPolyDraft((d) => [...d, frame.toLocal(p)])
     }
   }
 
   const exportDxf = () => {
-    const dxf = sceneToDxf({ frame, contours, indexInterval, area: area ?? undefined })
+    const dxf = sceneToDxf({ frame, contours, indexInterval, area: area ?? undefined, areaPolygon: polygon })
     download(`geoarc_curvas_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_UTM${frame.zone}${frame.south ? 'S' : 'N'}.dxf`, dxf, 'application/dxf')
   }
 
@@ -87,20 +123,35 @@ export function CurvasModule() {
               <button className={btn} onClick={cancel}>Cancelar</button>
               <span className="text-xs text-slate-500">{areaCorner ? 'Clic en la esquina opuesta del área.' : 'Clic en una esquina del área.'}</span>
             </div>
+          ) : mode === 'poligono' ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className={btnPrimary} onClick={finishPolygon} disabled={polyDraft.length < 3}>
+                  Cerrar polígono ({polyDraft.length})
+                </button>
+                <button className={btn} onClick={cancel}>Cancelar</button>
+                <span className="text-xs text-slate-500">Clic en cada vértice; doble clic cierra.</span>
+              </div>
+              {polyProblem && <Note tone="warn">{polyProblem}</Note>}
+            </>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                className={area ? btn : btnPrimary}
-                onClick={() => (setAreaCorner(null), setMode('area'), actions.setCurvas({ view: 'mapa' }))}
-              >
-                {area ? 'Redibujar área' : 'Dibujar área en el mapa'}
-              </button>
-              {!area && <span className="text-xs text-slate-500">Dos clics en esquinas opuestas. El terreno se descarga solo.</span>}
+              <button className={area ? btn : btnPrimary} onClick={() => startDrawing('area')}>Dibujar rectángulo</button>
+              <button className={btn} onClick={() => startDrawing('poligono')}>Dibujar polígono</button>
+              {!area && <span className="text-xs text-slate-500">El terreno se descarga solo al cerrar el área.</span>}
             </div>
           )}
           {area && cell !== null && (
             <p className="text-xs text-slate-600" data-testid="area-info">
-              {fmtAreaSize(rectSize(area).w, rectSize(area).h)} · celda {fmtNum(cell)} m ({gridCells(area, cell).nx} × {gridCells(area, cell).ny})
+              {polygon ? (
+                <>
+                  Polígono de {polygon.length} vértices · {fmt(polygonArea(polygon) / 10_000, 2)} ha. Se calcula sobre su
+                  rectángulo envolvente: {fmt(rectSize(area).w, 0)} × {fmt(rectSize(area).h, 0)} m
+                </>
+              ) : (
+                fmtAreaSize(rectSize(area).w, rectSize(area).h)
+              )}
+              {` · celda ${fmtNum(cell)} m (${gridCells(area, cell).nx} × ${gridCells(area, cell).ny})`}
             </p>
           )}
           <TerrainStatus />
@@ -162,16 +213,17 @@ export function CurvasModule() {
             frame={frame}
             site={site}
             area={area}
+            areaPolygon={polygon}
             areaCorner={areaCorner}
             loading={terrain.status.state === 'loading'}
             contours={contours}
             indexInterval={indexInterval}
             dataGrid={dataGrid}
             lot={[]}
-            draft={[]}
+            draft={polyDraft}
             mode={mode}
             onPick={onPick}
-            onFinishLot={() => {}}
+            onFinishDraft={finishPolygon}
             visible={view === 'mapa'}
           />
         </div>

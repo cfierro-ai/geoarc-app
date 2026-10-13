@@ -24,7 +24,7 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
 
   // área: un segundo clic a 5 px (~2 m) no la cierra y el aviso del mapa dice por qué
   const { cx, cy } = await centroMapa(page)
-  await page.getByRole('button', { name: 'Dibujar área en el mapa' }).click()
+  await page.getByRole('button', { name: 'Dibujar rectángulo' }).click()
   await page.mouse.click(cx - 100, cy + 100)
   await page.waitForTimeout(350)
   await page.mouse.move(cx - 95, cy + 95)

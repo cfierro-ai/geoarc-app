@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { createLocalFrame, type LonLat, type XY } from '../core/geo/local'
 import { gridStats, type HeightGrid } from '../core/dem/grid'
-import { autoCell, type Rect } from '../core/dem/area'
+import { autoCell, rectOfPolygon, type Rect } from '../core/dem/area'
 import { preseleccionEquidistancia } from '../core/contours/escala'
 import { lotBox, terrainAreaForLot } from '../core/envelope/lote'
 import { PERFILES, PERFIL_OGUC, reglaPorRol, type EdgeRole } from '../core/normativa/perfiles'
@@ -24,7 +24,10 @@ import type { Scene } from './scene'
  * Cada módulo funciona solo: ninguno necesita que el otro se haya usado antes.
  */
 export interface TerrainState {
+  /** Rectángulo de cálculo: el área dibujada, o el rectángulo envolvente del polígono. */
   area: Rect | null
+  /** Polígono del área (null = el área es el rectángulo). Las curvas se recortan a él. */
+  polygon: XY[] | null
   source: DemSourceId
   dem: HeightGrid | null
   status: DemStatus
@@ -58,7 +61,7 @@ export interface AppState {
 export function initialState(): AppState {
   return {
     site: TEMUCO,
-    terrain: { area: null, source: 'terrarium', dem: null, status: { state: 'idle' } },
+    terrain: { area: null, polygon: null, source: 'terrarium', dem: null, status: { state: 'idle' } },
     curvas: { contourInterval: 5, indexEvery: 5, showDataGrid: false, view: 'mapa' },
     sombras: {
       terrainMode: 'plano',
@@ -106,12 +109,17 @@ export function createAppStore(loaders?: DemLoaders) {
 
   /**
    * Descarga (o genera) el terreno del área. Al llegar, preselecciona la equidistancia de Curvas según el dato y el
-   * desnivel (salvo que se indique otra, p. ej. al abrir una escena).
+   * desnivel (salvo que se indique otra, p. ej. al abrir una escena). `polygon`: el área es ese polígono y `area` su
+   * rectángulo envolvente; sin él, el área es el rectángulo.
    */
-  async function loadTerrain(area: Rect, source = state.terrain.source, opts: { interval?: number; notice?: string } = {}) {
+  async function loadTerrain(
+    area: Rect,
+    source = state.terrain.source,
+    opts: { interval?: number; notice?: string; polygon?: XY[] | null } = {},
+  ) {
     const my = ++seq
     const frame = createLocalFrame(state.site)
-    setTerrain({ area, source, dem: null, status: { state: 'loading' } })
+    setTerrain({ area, polygon: opts.polygon ?? null, source, dem: null, status: { state: 'loading' } })
     try {
       const r = await loadDem(source, frame, area, autoCell(area), loaders)
       if (my !== seq) return
@@ -138,25 +146,29 @@ export function createAppStore(loaders?: DemLoaders) {
   const actions = {
     loadTerrain,
     ensureSiteTerrain,
+    /** Área dibujada como polígono: se descarga su rectángulo envolvente. */
+    setAreaPolygon(poly: XY[]) {
+      return loadTerrain(rectOfPolygon(poly), state.terrain.source, { polygon: poly })
+    },
     setCurvas,
     setSombras,
     setSite(p: LonLat) {
       seq++ // descarta una descarga en curso del sitio anterior
       set({
         site: p,
-        terrain: { ...state.terrain, area: null, dem: null, status: { state: 'idle' } },
+        terrain: { ...state.terrain, area: null, polygon: null, dem: null, status: { state: 'idle' } },
         sombras: { ...state.sombras, lot: [], edges: [] },
       })
     },
     setTerrainSource(src: DemSourceId) {
       if (!isSourceAvailable(src)) return
       setTerrain({ source: src })
-      if (state.terrain.area) return loadTerrain(state.terrain.area, src)
+      if (state.terrain.area) return loadTerrain(state.terrain.area, src, { polygon: state.terrain.polygon })
     },
     retryTerrain() {
       setTerrain({ status: { state: 'idle' } })
       if (state.sombras.terrainMode === 'sitio' && state.sombras.lot.length > 2 && !state.terrain.area) return ensureSiteTerrain()
-      if (state.terrain.area) return loadTerrain(state.terrain.area)
+      if (state.terrain.area) return loadTerrain(state.terrain.area, undefined, { polygon: state.terrain.polygon })
     },
     setTerrainMode(mode: TerrainMode) {
       setSombras({ terrainMode: mode })
@@ -192,6 +204,7 @@ export function createAppStore(loaders?: DemLoaders) {
       return {
         site,
         area: terrain.area,
+        areaPolygon: terrain.polygon,
         demSource: terrain.source,
         contourInterval: curvas.contourInterval,
         indexEvery: curvas.indexEvery,
@@ -206,11 +219,11 @@ export function createAppStore(loaders?: DemLoaders) {
       seq++
       set({
         site: s.site,
-        terrain: { area: s.area, source: s.demSource, dem: null, status: { state: 'idle', warn: s.notice } },
+        terrain: { area: s.area, polygon: s.areaPolygon, source: s.demSource, dem: null, status: { state: 'idle', warn: s.notice } },
         curvas: { ...state.curvas, contourInterval: s.contourInterval, indexEvery: s.indexEvery },
         sombras: { ...state.sombras, terrainMode: s.terrainMode, lot: s.lot, edges: s.edges, profileId: s.profileId, maxHeight: s.maxHeight },
       })
-      if (s.area) return loadTerrain(s.area, s.demSource, { interval: s.contourInterval, notice: s.notice })
+      if (s.area) return loadTerrain(s.area, s.demSource, { interval: s.contourInterval, notice: s.notice, polygon: s.areaPolygon })
       return ensureSiteTerrain()
     },
   }

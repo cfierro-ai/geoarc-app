@@ -12,8 +12,10 @@ export interface SceneForDxf {
   contours: Isoline[]
   /** Curvas maestras cada este intervalo (m). */
   indexInterval: number
-  /** Área de extracción del terreno. */
+  /** Área de extracción del terreno (rectángulo de cálculo). */
   area?: Rect
+  /** Polígono del área, si se dibujó así: AREA lleva sus vértices en vez del rectángulo. */
+  areaPolygon?: XY[] | null
   lot?: XY[]
   lotZ?: (p: XY) => number
   envelope?: EnvelopeResult
@@ -47,7 +49,7 @@ export function sceneToDxf(s: SceneForDxf): string {
     if (isIndex) for (const l of labelPlacements(c, th)) w.text('ETIQUETAS', U(l, c.level), th, cotaLabel(c.level), l.angleDeg)
   }
 
-  if (s.area) w.polyline2d('AREA', rectCorners(s.area).map((p) => s.frame.toUTM(p)), true)
+  if (s.area) w.polyline2d('AREA', (s.areaPolygon ?? rectCorners(s.area)).map((p) => s.frame.toUTM(p)), true)
 
   if (s.lot && s.lot.length > 2) {
     w.addLayer('LOTE', 1).polyline3d('LOTE', s.lot.map((p) => U(p, s.lotZ ? s.lotZ(p) : 0)), true)

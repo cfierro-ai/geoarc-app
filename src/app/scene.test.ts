@@ -6,6 +6,7 @@ import { parseScene, serializeScene, type Scene } from './scene'
 const scene: Scene = {
   site: TEMUCO,
   area: { minX: -120.5, minY: -40, maxX: 80, maxY: 95.25 },
+  areaPolygon: null,
   demSource: 'terrarium',
   contourInterval: 5,
   indexEvery: 4,
@@ -17,21 +18,40 @@ const scene: Scene = {
 }
 
 describe('archivo .geoarc', () => {
-  it('v3: guardar y abrir conserva área, lote, curvas y terreno del estudio', () => {
+  it('v4: guardar y abrir conserva área, lote, curvas y terreno del estudio', () => {
     const f = serializeScene(scene)
-    expect(f.version).toBe(3)
+    expect(f.version).toBe(4)
     const s = parseScene(JSON.stringify(f))
     for (const k of ['minX', 'minY', 'maxX', 'maxY'] as const) expect(s.area![k]).toBeCloseTo(scene.area![k], 6)
     s.lot.forEach((p, i) => {
       expect(p.x).toBeCloseTo(scene.lot[i].x, 6)
       expect(p.y).toBeCloseTo(scene.lot[i].y, 6)
     })
-    expect([s.contourInterval, s.indexEvery, s.demSource, s.terrainMode, s.notice]).toEqual([5, 4, 'terrarium', 'sitio', undefined])
+    expect([s.contourInterval, s.indexEvery, s.demSource, s.terrainMode, s.notice, s.areaPolygon]).toEqual([5, 4, 'terrarium', 'sitio', undefined, null])
+  })
+
+  it('v4: el área dibujada como polígono se guarda en lon/lat y vuelve igual', () => {
+    const tri = [{ x: -100, y: -40 }, { x: 80, y: -40 }, { x: -100, y: 95.25 }]
+    const s = parseScene(JSON.stringify(serializeScene({ ...scene, area: { minX: -100, minY: -40, maxX: 80, maxY: 95.25 }, areaPolygon: tri })))
+    expect(s.areaPolygon).toHaveLength(3)
+    s.areaPolygon!.forEach((p, i) => {
+      expect(p.x).toBeCloseTo(tri[i].x, 6)
+      expect(p.y).toBeCloseTo(tri[i].y, 6)
+    })
+  })
+
+  it('v3 (sin polígono) se abre con el área rectangular', () => {
+    const { areaPolygonLonLat: _p, ...v4 } = serializeScene(scene)
+    void _p
+    const s = parseScene(JSON.stringify({ ...v4, version: 3 }))
+    expect([s.terrainMode, s.areaPolygon]).toEqual(['sitio', null])
+    expect(s.area!.maxX).toBeCloseTo(80, 6)
   })
 
   it('v2: con lote y área, el estudio sigue sobre el terreno del sitio; sin lote, en plano', () => {
-    const { terrainMode: _omit, ...v3 } = serializeScene(scene)
+    const { terrainMode: _omit, areaPolygonLonLat: _p, ...v3 } = serializeScene(scene)
     void _omit
+    void _p
     const v2 = { ...v3, version: 2 }
     expect(parseScene(JSON.stringify(v2)).terrainMode).toBe('sitio')
     expect(parseScene(JSON.stringify({ ...v2, lotLonLat: [] })).terrainMode).toBe('plano')

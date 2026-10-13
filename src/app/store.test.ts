@@ -95,6 +95,29 @@ describe('store común', () => {
     expect(calls[1].area.minX).toBeGreaterThan(200)
   })
 
+  it('área como polígono: se descarga su rectángulo envolvente y el polígono sobrevive a cambiar de fuente', async () => {
+    const { l, calls } = loaders()
+    const st = createAppStore(l)
+    const tri = [{ x: 0, y: 0 }, { x: 120, y: 0 }, { x: 0, y: 90 }]
+    await st.actions.setAreaPolygon(tri)
+    expect(calls).toEqual([{ src: 'terrarium', area: { minX: 0, minY: 0, maxX: 120, maxY: 90 } }])
+    expect(st.getState().terrain.polygon).toEqual(tri)
+    await st.actions.setTerrainSource('sintetico')
+    expect(st.getState().terrain.polygon).toEqual(tri)
+    // un rectángulo nuevo reemplaza al polígono
+    await st.actions.loadTerrain(squareRect(100))
+    expect(st.getState().terrain.polygon).toBeNull()
+  })
+
+  it('el estudio de sombras que descarga alrededor del lote deja un área rectangular (sin el polígono de Curvas)', async () => {
+    const { l } = loaders()
+    const st = createAppStore(l)
+    await st.actions.setAreaPolygon([{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 0, y: 60 }])
+    await st.actions.setTerrainMode('sitio')
+    await st.actions.setLot(lotFromDimensions(20, 30, 0, { x: 300, y: 0 }))
+    expect(st.getState().terrain.polygon).toBeNull()
+  })
+
   it('abrir una escena conserva la equidistancia guardada', async () => {
     const { l } = loaders()
     const st = createAppStore(l)

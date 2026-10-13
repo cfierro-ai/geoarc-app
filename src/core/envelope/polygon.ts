@@ -52,6 +52,14 @@ export function facing(n: XY): string {
   return RUMBOS[Math.round((((az % 360) + 360) % 360) / 45) % 8]
 }
 
+/** Quita vértices repetidos de un anillo dibujado en el mapa (el doble clic agrega dos clics en el mismo punto). */
+export function cleanRing(pts: XY[], tol = 0.3): XY[] {
+  const out: XY[] = []
+  for (const p of pts) if (!out.length || Math.hypot(p.x - out[out.length - 1].x, p.y - out[out.length - 1].y) > tol) out.push(p)
+  while (out.length > 2 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].y - out[out.length - 1].y) <= tol) out.pop()
+  return out
+}
+
 export function bbox(poly: XY[]) {
   return {
     minX: Math.min(...poly.map((p) => p.x)),

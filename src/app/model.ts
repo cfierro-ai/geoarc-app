@@ -35,7 +35,8 @@ export interface EdgeSetting {
   rule: EdgeRule
 }
 
-export type MapMode = 'none' | 'site' | 'area' | 'lot'
+/** Qué hace un clic en el mapa: nada, fijar el sitio, área rectangular (dos esquinas), área poligonal o lote. */
+export type MapMode = 'none' | 'site' | 'area' | 'poligono' | 'lot'
 
 export const EDGE_COLORS = ['#e4572e', '#17bebb', '#f2b705', '#76b041', '#8e6bbf', '#2e86ab', '#f28482', '#a0522d']
 export const MAX_HEIGHT_COLOR = '#9aa3ad'

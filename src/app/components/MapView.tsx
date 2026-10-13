@@ -77,8 +77,10 @@ const empty: FC = { type: 'FeatureCollection', features: [] }
 interface Props {
   frame: LocalFrame
   site: LonLat
-  /** Área de extracción cerrada. */
+  /** Área de extracción cerrada (rectángulo de cálculo). */
   area: Rect | null
+  /** Polígono del área, si se dibujó así (se muestra en vez del rectángulo). */
+  areaPolygon: XY[] | null
   /** Primera esquina del área en dibujo. */
   areaCorner: XY | null
   loading: boolean
@@ -90,13 +92,14 @@ interface Props {
   draft: XY[]
   mode: MapMode
   onPick: (p: LonLat) => void
-  onFinishLot: () => void
+  /** Doble clic al dibujar un lote o un polígono: cerrar el dibujo. */
+  onFinishDraft: () => void
   visible: boolean
 }
 
-/** Polígono GeoJSON de un rectángulo local. */
-function rectFeature(r: Rect, ll: (q: XY) => number[]): Feature {
-  const c = rectCorners(r).map(ll)
+/** Polígono GeoJSON de un anillo local. */
+function ringFeature(ring: XY[], ll: (q: XY) => number[]): Feature {
+  const c = ring.map(ll)
   return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[...c, c[0]]] } }
 }
 
@@ -200,9 +203,9 @@ export function MapView(p: Props) {
       setHoverRect(rectFromCorners(c.areaCorner, c.frame.toLocal({ lon: e.lngLat.lng, lat: e.lngLat.lat })))
     })
     m.on('dblclick', (e: MapMouseEvent) => {
-      if (cb.current.mode === 'lot') {
+      if (cb.current.mode === 'lot' || cb.current.mode === 'poligono') {
         e.preventDefault()
-        cb.current.onFinishLot()
+        cb.current.onFinishDraft()
       }
     })
     return m
@@ -225,8 +228,8 @@ export function MapView(p: Props) {
     const m = map.current
     if (!m || !ready) return
     m.getCanvas().style.cursor = p.mode === 'none' ? '' : 'crosshair'
-    // dos clics seguidos (lote o esquinas del área) no deben hacer zoom
-    if (p.mode === 'lot' || p.mode === 'area') m.doubleClickZoom.disable()
+    // dos clics seguidos (lote, polígono o esquinas del área) no deben hacer zoom
+    if (p.mode === 'lot' || p.mode === 'area' || p.mode === 'poligono') m.doubleClickZoom.disable()
     else m.doubleClickZoom.enable()
   }, [p.mode, ready])
 
@@ -245,7 +248,7 @@ export function MapView(p: Props) {
     const fs: Feature[] = []
     if (p.mode === 'area' && p.areaCorner) {
       fs.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: ll(p.areaCorner) } })
-      if (hoverRect) fs.push(rectFeature(hoverRect, ll))
+      if (hoverRect) fs.push(ringFeature(rectCorners(hoverRect), ll))
     }
     ;(m.getSource('area-draft') as GeoJSONSource).setData({ type: 'FeatureCollection', features: fs })
   }, [p.frame, p.mode, p.areaCorner, hoverRect, ready])
@@ -281,7 +284,10 @@ export function MapView(p: Props) {
       return [g.lon, g.lat]
     }
     m.getContainer().removeAttribute('data-idle')
-    ;(m.getSource('area') as GeoJSONSource).setData({ type: 'FeatureCollection', features: p.area ? [rectFeature(p.area, ll)] : [] })
+    ;(m.getSource('area') as GeoJSONSource).setData({
+      type: 'FeatureCollection',
+      features: p.area ? [ringFeature(p.areaPolygon ?? rectCorners(p.area), ll)] : [],
+    })
     ;(m.getSource('contours') as GeoJSONSource).setData({
       type: 'FeatureCollection',
       features: p.contours.map((c) => {
@@ -307,7 +313,7 @@ export function MapView(p: Props) {
     const dr: Feature[] = p.draft.map((q) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: ll(q) } }))
     if (p.draft.length > 1) dr.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: p.draft.map(ll) } })
     ;(m.getSource('draft') as GeoJSONSource).setData({ type: 'FeatureCollection', features: dr })
-  }, [p.frame, p.area, p.contours, p.indexInterval, p.lot, p.draft, ready])
+  }, [p.frame, p.area, p.areaPolygon, p.contours, p.indexInterval, p.lot, p.draft, ready])
 
   const hoverProblem = hoverRect && areaProblem(hoverRect)
   const banner =
@@ -315,6 +321,8 @@ export function MapView(p: Props) {
       ? 'Haz clic en el mapa para fijar el sitio'
       : p.mode === 'lot'
         ? 'Clic: agregar vértice · Doble clic: cerrar lote'
+        : p.mode === 'poligono'
+          ? 'Clic: agregar vértice · Doble clic: cerrar el polígono · Esc: cancelar'
         : p.mode === 'area'
           ? !p.areaCorner
             ? 'Clic: primera esquina del área · Esc: cancelar'

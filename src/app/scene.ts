@@ -26,15 +26,24 @@ interface SceneFileV2 extends Omit<SceneFileV1, 'version' | 'areaSize' | 'cell'>
 }
 
 /** v3: dos módulos; el estudio de sombras guarda sobre qué terreno se calcula. */
-export interface SceneFileV3 extends Omit<SceneFileV2, 'version'> {
+interface SceneFileV3 extends Omit<SceneFileV2, 'version'> {
   version: 3
   terrainMode: TerrainMode
+}
+
+/** v4: el área puede ser un polígono (vértices en lon/lat); `areaLonLat` sigue siendo su rectángulo envolvente. */
+export interface SceneFileV4 extends Omit<SceneFileV3, 'version'> {
+  version: 4
+  areaPolygonLonLat: LonLat[] | null
 }
 
 /** Escena en el marco local del sitio, lista para cargar en la app. */
 export interface Scene {
   site: LonLat
+  /** Rectángulo de cálculo: el área, o el rectángulo envolvente del polígono. */
   area: Rect | null
+  /** Polígono del área (null = el área es el rectángulo). */
+  areaPolygon: XY[] | null
   demSource: DemSourceId
   contourInterval: number
   indexEvery: number
@@ -47,13 +56,14 @@ export interface Scene {
   notice?: string
 }
 
-export function serializeScene(s: Scene): SceneFileV3 {
+export function serializeScene(s: Scene): SceneFileV4 {
   const fr = createLocalFrame(s.site)
   return {
     format: 'geoarc',
-    version: 3,
+    version: 4,
     site: s.site,
     areaLonLat: s.area ? [fr.toLonLat({ x: s.area.minX, y: s.area.minY }), fr.toLonLat({ x: s.area.maxX, y: s.area.maxY })] : null,
+    areaPolygonLonLat: s.area && s.areaPolygon ? s.areaPolygon.map((p) => fr.toLonLat(p)) : null,
     demSource: s.demSource,
     contourInterval: s.contourInterval,
     indexEvery: s.indexEvery,
@@ -65,10 +75,10 @@ export function serializeScene(s: Scene): SceneFileV3 {
   }
 }
 
-/** Lee un .geoarc (v1, v2 o v3). Lanza un error legible si el archivo no es una escena. */
+/** Lee un .geoarc (v1 a v4). Lanza un error legible si el archivo no es una escena. */
 export function parseScene(text: string): Scene {
-  const f = JSON.parse(text) as SceneFileV1 | SceneFileV2 | SceneFileV3
-  if (f?.format !== 'geoarc' || ![1, 2, 3].includes(f.version)) throw new Error('Archivo no reconocido')
+  const f = JSON.parse(text) as SceneFileV1 | SceneFileV2 | SceneFileV3 | SceneFileV4
+  if (f?.format !== 'geoarc' || ![1, 2, 3, 4].includes(f.version)) throw new Error('Archivo no reconocido')
   const fr = createLocalFrame(f.site)
   const area =
     f.version === 1
@@ -81,12 +91,13 @@ export function parseScene(text: string): Scene {
   return {
     site: f.site,
     area,
+    areaPolygon: f.version === 4 && area && f.areaPolygonLonLat ? f.areaPolygonLonLat.map((p) => fr.toLocal(p)) : null,
     demSource: available ? f.demSource : 'terrarium',
     notice: available ? undefined : 'La escena usaba Copernicus, que requiere proxy: se usa Terrarium.',
     contourInterval: f.contourInterval,
     indexEvery: f.version === 1 ? 5 : f.indexEvery,
     // hasta v2 la envolvente se calculaba siempre sobre el terreno cargado
-    terrainMode: f.version === 3 ? f.terrainMode : lot.length > 2 && area ? 'sitio' : 'plano',
+    terrainMode: f.version >= 3 ? (f as SceneFileV3 | SceneFileV4).terrainMode : lot.length > 2 && area ? 'sitio' : 'plano',
     lot,
     profileId: f.profileId,
     maxHeight: f.maxHeight,

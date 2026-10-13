@@ -40,11 +40,48 @@ export async function interceptarTerrarium(page: Page) {
 /** Dibuja el área con dos clics en esquinas opuestas, a ±d px del centro del mapa (a zoom 17, ~0,47 m/px en Temuco). */
 export async function dibujarArea(page: Page, d = 100) {
   const { cx, cy } = await centroMapa(page)
-  await page.getByRole('button', { name: /Dibujar área en el mapa|Redibujar área/ }).click()
+  await page.getByRole('button', { name: 'Dibujar rectángulo' }).click()
   await page.mouse.click(cx - d, cy + d)
   await page.waitForTimeout(350) // evita que dos clics seguidos se lean como doble clic
   await page.mouse.move(cx + d, cy - d)
   await page.mouse.click(cx + d, cy - d)
+}
+
+/** Vértices de las POLYLINE de una capa de un DXF R12 (x, y en UTM), una lista por polilínea. */
+export function polilineasDxf(dxf: string, capa: string): { x: number; y: number }[][] {
+  const l = dxf.split(/\r?\n/)
+  const ents: { type: string; g: Map<string, string> }[] = []
+  for (let k = 0; k + 1 < l.length; k += 2) {
+    const c = l[k].trim()
+    if (c === '0') ents.push({ type: l[k + 1], g: new Map() })
+    else if (ents.length && !ents[ents.length - 1].g.has(c)) ents[ents.length - 1].g.set(c, l[k + 1])
+  }
+  const out: { x: number; y: number }[][] = []
+  for (let k = 0; k < ents.length; k++) {
+    if (ents[k].type !== 'POLYLINE' || ents[k].g.get('8') !== capa) continue
+    const pts: { x: number; y: number }[] = []
+    for (let j = k + 1; j < ents.length && ents[j].type === 'VERTEX'; j++) pts.push({ x: +ents[j].g.get('10')!, y: +ents[j].g.get('20')! })
+    out.push(pts)
+  }
+  return out
+}
+
+/** ¿El punto está dentro del polígono o a menos de `tol` de su borde? */
+export function dentroOBorde(p: { x: number; y: number }, poly: { x: number; y: number }[], tol: number): boolean {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i]
+    const b = poly[j]
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside
+  }
+  if (inside) return true
+  return poly.some((a, k) => {
+    const b = poly[(k + 1) % poly.length]
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)))
+    return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy) < tol
+  })
 }
 
 /** PNG RGB 256×256 a partir de una función de cota por píxel, con la codificación Terrarium (r·256 + g + b/256 − 32768). */

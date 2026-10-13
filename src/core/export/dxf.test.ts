@@ -84,6 +84,19 @@ describe('DXF R12', () => {
     expect(ents[k + 5].type).toBe('SEQEND')
   })
 
+  it('área como polígono: AREA lleva los vértices del polígono, no su rectángulo envolvente', () => {
+    const frame = createLocalFrame({ lon: -72.598, lat: -38.739 })
+    const tri = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 60 }]
+    const s = sceneToDxf({ frame, indexInterval: 5, contours: [], area: { minX: 0, minY: 0, maxX: 100, maxY: 60 }, areaPolygon: tri })
+    const { ents } = parseDxf(s)
+    const k = ents.findIndex((e) => e.type === 'POLYLINE' && first(e, 8) === 'AREA')
+    expect(first(ents[k], 70)).toBe('1')
+    expect(ents[k + 4].type).toBe('SEQEND')
+    expect(ents.slice(k + 1, k + 4).map((v) => [first(v, 10), first(v, 20)])).toEqual(
+      tri.map(({ x, y }) => [(frame.originE + x).toFixed(3), (frame.originN + y).toFixed(3)]),
+    )
+  })
+
   it('estudio en plano (sin terreno): solo LOTE, sin capas de curvas', () => {
     const frame = createLocalFrame({ lon: -72.598, lat: -38.739 })
     const s = sceneToDxf({ frame, indexInterval: 5, contours: [], lot: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] })

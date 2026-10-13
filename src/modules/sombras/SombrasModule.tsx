@@ -6,7 +6,8 @@ import { contourLevels, isolines } from '../../core/contours/isolines'
 import { preseleccionEquidistancia } from '../../core/contours/escala'
 import { computeEnvelope, GOV_MAX_HEIGHT, prepare } from '../../core/envelope/envelope'
 import { envelopeInputFor, lotFromDimensions, terrainAreaForLot } from '../../core/envelope/lote'
-import { area, facing, outwardNormal, toCCW } from '../../core/envelope/polygon'
+import { area, cleanRing, facing, outwardNormal, toCCW } from '../../core/envelope/polygon'
+import { clipIsolines } from '../../core/contours/clip'
 import { PERFILES, perfilVerificado, type EdgeRole } from '../../core/normativa/perfiles'
 import { sceneToDxf } from '../../core/export/sceneDxf'
 import { MapView } from '../../app/components/MapView'
@@ -17,14 +18,6 @@ import { btn, btnPrimary, input, ModulePanel, Note, Num, Section } from '../../a
 import { download, useEscape } from '../../app/util'
 import { edgeColor, exampleLot, fmt, MAX_HEIGHT_COLOR, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
 import { actions, gridCoversLot, useAppState } from '../../app/store'
-
-/** Quita vértices repetidos (el doble clic agrega dos clics extra en el mismo punto). */
-function cleanRing(pts: XY[], tol = 0.3): XY[] {
-  const out: XY[] = []
-  for (const p of pts) if (!out.length || Math.hypot(p.x - out[out.length - 1].x, p.y - out[out.length - 1].y) > tol) out.push(p)
-  while (out.length > 2 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].y - out[out.length - 1].y) <= tol) out.pop()
-  return out
-}
 
 /** Grilla sobre la que se calcula y dibuja el estudio: plana (cota 0) o el terreno del sitio si cubre el lote. */
 function useStudyGrid(terrainMode: TerrainMode, lot: XY[], dem: HeightGrid | null): HeightGrid | null {
@@ -82,13 +75,16 @@ export function SombrasModule() {
   const envelope = useMemo(() => (envInput ? computeEnvelope(envInput) : undefined), [envInput])
   const envCtx = useMemo(() => (envInput ? prepare(envInput) : undefined), [envInput])
 
-  // curvas del terreno del sitio (equidistancia preseleccionada), como referencia en el mapa y en 3D
+  // curvas del terreno del sitio (equidistancia preseleccionada), como referencia en el mapa y en 3D; si el área de
+  // Curvas es un polígono, recortadas a él como allá
+  const areaPolygon = terrainMode === 'sitio' ? terrain.polygon : null
   const { contours, indexInterval } = useMemo(() => {
     if (terrainMode !== 'sitio' || !grid) return { contours: [], indexInterval: 25 }
     const { min, max } = gridStats(grid)
     const e = preseleccionEquidistancia(grid.meta, max - min).equidistancia
-    return { contours: isolines(grid, contourLevels(min, max, e)), indexInterval: 5 * e }
-  }, [terrainMode, grid])
+    const all = isolines(grid, contourLevels(min, max, e))
+    return { contours: areaPolygon ? clipIsolines(all, areaPolygon) : all, indexInterval: 5 * e }
+  }, [terrainMode, grid, areaPolygon])
 
   const cancel = useCallback(() => {
     setMode('none')
@@ -143,6 +139,7 @@ export function SombrasModule() {
       contours,
       indexInterval,
       area: sitio ? (terrain.area ?? undefined) : undefined,
+      areaPolygon,
       lot,
       lotZ: (p) => terrainFn(p.x, p.y),
       envelope,
@@ -312,6 +309,7 @@ export function SombrasModule() {
             frame={frame}
             site={site}
             area={terrainMode === 'sitio' ? terrain.area : null}
+            areaPolygon={areaPolygon}
             areaCorner={null}
             loading={terrainMode === 'sitio' && terrain.status.state === 'loading'}
             contours={contours}
@@ -321,7 +319,7 @@ export function SombrasModule() {
             draft={draft}
             mode={mode}
             onPick={onPick}
-            onFinishLot={finishLot}
+            onFinishDraft={finishLot}
             visible={view === 'mapa'}
           />
         </div>
