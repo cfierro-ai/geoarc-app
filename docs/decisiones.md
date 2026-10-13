@@ -259,3 +259,14 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
 ### Ramas y PR
 - El PR #1 seguía abierto (CI en verde) cuando se pidió continuar. La mezcla sin revisión quedó bloqueada por los
   permisos de la sesión, así que este trabajo va en `v0.2-sombras`, apilado sobre `v0.2-modulos`: mezclar #1 antes que #2.
+
+## 2026-10-12 · Simplificación y maqueta (Chris)
+- La app es apoyo a la etapa inicial de taller de diseño: extraer curvas de nivel y contexto, y descargar.
+  Un alumno no tiene levantamiento propio (eso exige LiDAR/fotogrametría en sitio).
+- Se elimina la importación de DXF (PR #3, cerrado sin mezclar). Se conserva en la etiqueta de git
+  `archivo/importador-dxf`. Nada de código dormido.
+- Estudio de sombras: terreno "Plano" o "Terreno del sitio" solamente.
+- Se mantienen: área como polígono, edificaciones y vías (como contexto para la descarga), altura máxima sub-celda.
+- Los estudiantes de Taller III hacen maqueta de terreno → en el PR #5 se agregan dos descargas: Maqueta
+  (corte láser) y Malla 3D (OBJ).
+- Plan: PR #4 `v0.2-simplificar` → PR #5 `v0.2-maqueta`.
