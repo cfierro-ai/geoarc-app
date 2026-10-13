@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { centroMapa, interceptarTerrarium } from './util'
+import { centroMapa, interceptarContexto, interceptarTerrarium } from './util'
 
 /**
  * Módulo de curvas, flujo del profesor: ubicar el sitio → dibujar el área → las curvas aparecen.
@@ -10,6 +10,7 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
   const n = await interceptarTerrarium(page)
+  await interceptarContexto(page)
   await page.goto('/curvas')
 
   // la fuente queda plegada en «Opciones avanzadas»; Copernicus se ve pero no se puede elegir
@@ -24,7 +25,7 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
 
   // área: un segundo clic a 5 px (~2 m) no la cierra y el aviso del mapa dice por qué
   const { cx, cy } = await centroMapa(page)
-  await page.getByRole('button', { name: 'Dibujar área en el mapa' }).click()
+  await page.getByRole('button', { name: 'Dibujar rectángulo' }).click()
   await page.mouse.click(cx - 100, cy + 100)
   await page.waitForTimeout(350)
   await page.mouse.move(cx - 95, cy + 95)
@@ -62,10 +63,14 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   await expect(page.getByTestId('map')).toHaveAttribute('data-idle', 'true', { timeout: 30_000 })
   await page.screenshot({ path: 'e2e/capturas/09-curvas-terrarium.png' })
 
+  // sin edificaciones ni vías en el área, la descarga no las promete
+  await expect(page.getByTestId('contexto-info')).toContainText('0 edificaciones · 0 vías')
+  await expect(page.getByTestId('descarga-contenido')).toHaveText(/^Curvas con cota y área\. Coordenadas UTM 18S/)
+
   // DXF: maestras cada 25 m (1 de 5) → la curva de 200 m, la del sitio, es maestra y lleva su cota
   const [descarga] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Exportar curvas DXF (UTM)' }).click(),
+    page.getByRole('button', { name: 'Descargar DXF (UTM)' }).click(),
   ])
   expect(descarga.suggestedFilename()).toMatch(/^geoarc_curvas_.*_UTM18S\.dxf$/)
   await descarga.saveAs('e2e/capturas/10-curvas-terrarium.dxf')

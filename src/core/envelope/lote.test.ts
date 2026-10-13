@@ -38,6 +38,18 @@ describe('estudio de sombras en plano (cota 0)', () => {
     expect(e.ground).toBe(0)
   })
 
+  it('altura máxima alcanzable, refinada bajo la celda: 20×20 a 70° → 10·tan 70° = 27,47 m (no 27,13 de la celda)', () => {
+    // la grilla de cálculo (0,25 m) no tiene un centro de celda en el centro del lote: el más cercano está a
+    // (0,125; 0,125) → 9,875·tan 70° = 27,13 m. El refinamiento parte de esa celda y llega al máximo verdadero.
+    const T = 10 * T70
+    expect(T).toBeCloseTo(27.47, 2)
+    for (const [giro, c] of [[0, { x: 0, y: 0 }], [0, { x: 0.37, y: -0.21 }], [30, { x: 0, y: 0 }]] as const) {
+      const r = computeEnvelope(envelopeInputFor(lotFromDimensions(20, 20, giro, c), deslindes(4), 0, flatTerrain))
+      expect(r.stats.maxRel).toBeCloseTo(T, 2) // ±0,005 m
+      expect(Math.hypot(r.stats.maxAt.x - c.x, r.stats.maxAt.y - c.y)).toBeLessThan(0.005)
+    }
+  })
+
   it('con altura máxima 14 m manda la altura máxima en el centro', () => {
     const input = envelopeInputFor(lotFromDimensions(20, 20, 0), deslindes(4), 14, flatTerrain)
     const r = computeEnvelope(input)

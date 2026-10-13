@@ -23,11 +23,16 @@ export class DxfWriter {
     return this
   }
 
-  /** Polilínea plana a la cota `elevation` (código 30 de la POLYLINE). */
-  polyline2d(layer: string, pts: XY[], closed = false, elevation = 0): this {
+  /**
+   * Polilínea plana a la cota `elevation` (código 30 de la POLYLINE). `thickness` (código 39) la extruye hacia arriba:
+   * AutoCAD y la mayoría de los CAD la muestran como muros de esa altura.
+   */
+  polyline2d(layer: string, pts: XY[], closed = false, elevation = 0, thickness = 0): this {
     if (pts.length < 2) return this
     const L = sanitize(layer)
-    const e: (string | number)[] = [0, 'POLYLINE', 8, L, 66, 1, 10, 0, 20, 0, 30, n(elevation), 70, closed ? 1 : 0]
+    const e: (string | number)[] = [0, 'POLYLINE', 8, L, 66, 1, 10, 0, 20, 0, 30, n(elevation)]
+    if (thickness) e.push(39, n(thickness))
+    e.push(70, closed ? 1 : 0)
     for (const p of pts) e.push(0, 'VERTEX', 8, L, 10, n(p.x), 20, n(p.y), 30, n(elevation))
     e.push(0, 'SEQEND', 8, L)
     this.entities.push(pairs(e))
@@ -42,12 +47,12 @@ export class DxfWriter {
     return this
   }
 
-  /** Texto centrado (horizontal y verticalmente) en `p`, de altura `height` y giro `angleDeg`. */
+  /** Texto centrado (horizontal y verticalmente) en `p`, de altura `height` y giro `angleDeg`. Lo no ASCII va como \U+XXXX. */
   text(layer: string, p: XYZ, height: number, value: string, angleDeg = 0): this {
     const L = sanitize(layer)
     const at = [n(p.x), n(p.y), n(p.z)]
     // 72 = 1 (centro) y 73 = 2 (medio): el texto se ubica por el punto de alineación 11/21/31
-    const e: (string | number)[] = [0, 'TEXT', 8, L, 10, at[0], 20, at[1], 30, at[2], 40, n(height), 1, value, 50, n(angleDeg)]
+    const e: (string | number)[] = [0, 'TEXT', 8, L, 10, at[0], 20, at[1], 30, at[2], 40, n(height), 1, ascii(value), 50, n(angleDeg)]
     e.push(7, 'STANDARD', 72, 1, 11, at[0], 21, at[1], 31, at[2], 73, 2)
     this.entities.push(pairs(e))
     return this
@@ -68,6 +73,14 @@ export class DxfWriter {
 
 function n(v: number): string {
   return Number.isFinite(v) ? v.toFixed(3) : '0'
+}
+
+/**
+ * R12 no declara la codificación del texto: cada programa supone la suya. Los caracteres no ASCII van con el escape
+ * \U+XXXX de AutoCAD (lo leen AutoCAD, ezdxf, LibreCAD y GDAL/QGIS) y el archivo queda en ASCII puro.
+ */
+function ascii(s: string): string {
+  return s.replace(/[^\x20-\x7e]/g, (c) => `\\U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`)
 }
 
 function sanitize(name: string): string {

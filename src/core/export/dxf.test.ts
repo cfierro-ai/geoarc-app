@@ -84,6 +84,60 @@ describe('DXF R12', () => {
     expect(ents[k + 5].type).toBe('SEQEND')
   })
 
+  it('área como polígono: AREA lleva los vértices del polígono, no su rectángulo envolvente', () => {
+    const frame = createLocalFrame({ lon: -72.598, lat: -38.739 })
+    const tri = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 60 }]
+    const s = sceneToDxf({ frame, indexInterval: 5, contours: [], area: { minX: 0, minY: 0, maxX: 100, maxY: 60 }, areaPolygon: tri })
+    const { ents } = parseDxf(s)
+    const k = ents.findIndex((e) => e.type === 'POLYLINE' && first(e, 8) === 'AREA')
+    expect(first(ents[k], 70)).toBe('1')
+    expect(ents[k + 4].type).toBe('SEQEND')
+    expect(ents.slice(k + 1, k + 4).map((v) => [first(v, 10), first(v, 20)])).toEqual(
+      tri.map(({ x, y }) => [(frame.originE + x).toFixed(3), (frame.originN + y).toFixed(3)]),
+    )
+  })
+
+  it('texto no ASCII (©) va escapado como \\U+00A9: el archivo queda en ASCII puro', () => {
+    const s = new DxfWriter().addLayer('A', 7).text('A', { x: 0, y: 0, z: 0 }, 1, '© OpenStreetMap').toString()
+    expect(s).toContain('\n1\n\\U+00A9 OpenStreetMap\n')
+    expect([...s].every((c) => c.charCodeAt(0) < 128)).toBe(true)
+  })
+
+  it('contexto: EDIFICACIONES (huella a su cota, altura como espesor), VIALIDAD (3D sobre el terreno) y atribución OSM', () => {
+    const frame = createLocalFrame({ lon: -72.598, lat: -38.739 })
+    const s = sceneToDxf({
+      frame,
+      indexInterval: 5,
+      contours: [],
+      area: { minX: 0, minY: 0, maxX: 100, maxY: 60 },
+      contexto: {
+        fuente: 'overpass',
+        fecha: '2026-10-13T12:42:35Z',
+        edificaciones: [
+          { id: 'w1', anillo: [{ x: 10, y: 10 }, { x: 30, y: 10 }, { x: 30, y: 20 }, { x: 10, y: 20 }], huecos: [[{ x: 15, y: 12 }, { x: 20, y: 12 }, { x: 20, y: 18 }]], altura: 12, alturaFuente: 'pisos' },
+        ],
+        vias: [{ id: 'w2', linea: [{ x: 0, y: 40 }, { x: 100, y: 40 }], clase: 'residential' }],
+      },
+      // terreno que sube 1 m cada 10 m hacia el este, desde la cota 200
+      cotaBase: (p) => 200 + p.x / 10,
+    })
+    const { ents, layers } = parseDxf(s)
+    expect(layers).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'EDIFICACIONES', 'VIALIDAD', 'ATRIBUCION'])
+
+    // huella y patio: polilíneas 2D cerradas a la cota más baja de la huella (201), con espesor = altura (12)
+    const edif = ents.filter((e) => e.type === 'POLYLINE' && first(e, 8) === 'EDIFICACIONES')
+    expect(edif).toHaveLength(2)
+    for (const e of edif) expect([first(e, 70), first(e, 30), first(e, 39)]).toEqual(['1', '201.000', '12.000'])
+
+    // vía: polilínea 3D (70 = 8) con la cota del terreno en cada vértice
+    const k = ents.findIndex((e) => e.type === 'POLYLINE' && first(e, 8) === 'VIALIDAD')
+    expect(first(ents[k], 70)).toBe('8')
+    expect([first(ents[k + 1], 30), first(ents[k + 2], 30)]).toEqual(['200.000', '210.000'])
+
+    const t = ents.find((e) => e.type === 'TEXT' && first(e, 8) === 'ATRIBUCION')!
+    expect(first(t, 1)).toBe('\\U+00A9 OpenStreetMap contributors (ODbL)')
+  })
+
   it('estudio en plano (sin terreno): solo LOTE, sin capas de curvas', () => {
     const frame = createLocalFrame({ lon: -72.598, lat: -38.739 })
     const s = sceneToDxf({ frame, indexInterval: 5, contours: [], lot: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] })

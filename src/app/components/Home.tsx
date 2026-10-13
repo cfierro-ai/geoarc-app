@@ -53,19 +53,24 @@ function ModuleCard({ route, title, icon, children, steps }: { route: Route; tit
   )
 }
 
-/** Pantalla de inicio: un módulo por tarjeta. Cada módulo funciona solo; el sitio y el terreno se comparten. */
+/** Pantalla de inicio: un módulo por tarjeta. Cada módulo funciona solo; el sitio, el terreno y el contexto se comparten. */
 export function Home() {
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50" data-testid="inicio">
       <div className="mx-auto max-w-4xl px-4 py-10">
         <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Terreno real y norma, para el taller</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Elige un módulo. Cada uno funciona solo; el sitio y el terreno que cargues se comparten entre ambos.
+          Elige un módulo. Cada uno funciona solo; el sitio, el terreno y el contexto que cargues se comparten entre ambos.
         </p>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <ModuleCard route="curvas" title="Curvas de nivel" icon={<ContoursIcon />} steps={['Ubica el sitio', 'Dibuja el área', 'Las curvas aparecen']}>
-            Curvas del terreno real de cualquier lugar, con la equidistancia que el dato sostiene. Exporta a DXF georreferenciado
-            (UTM) con cotas.
+          <ModuleCard
+            route="curvas"
+            title="Curvas de nivel"
+            icon={<ContoursIcon />}
+            steps={['Ubica el sitio', 'Dibuja el área', 'Aparecen las curvas y el contexto', 'Descarga']}
+          >
+            Curvas del terreno real de cualquier lugar, con la equidistancia que el dato sostiene, y el contexto: edificaciones y
+            vías de OpenStreetMap. Descarga un DXF georreferenciado (UTM) con cotas.
           </ModuleCard>
           <ModuleCard route="sombras" title="Estudio de sombras" icon={<SunIcon />} steps={['Ubica el sitio', 'Define el lote', 'Aplica rasantes y altura máxima']}>
             Envolvente por rasantes, distanciamientos y altura máxima, en plano o sobre el terreno del sitio. Muestra qué

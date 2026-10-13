@@ -2,9 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import type { XY } from '../../core/geo/local'
 import type { HeightGrid } from '../../core/dem/grid'
-import { gridStats, sampleBilinear } from '../../core/dem/grid'
+import { gridStats, sampleBilinear, sampleClamped } from '../../core/dem/grid'
+import type { Edificacion } from '../../core/contexto/contexto'
 import { isIndexLevel, type Isoline } from '../../core/contours/isolines'
 import type { EnvelopeResult, EnvelopeContext } from '../../core/envelope/envelope'
 import { GOV_MAX_HEIGHT } from '../../core/envelope/envelope'
@@ -22,6 +24,8 @@ interface Props {
   selectedEdge: number | null
   exaggeration: number
   visible: boolean
+  /** Edificaciones del contexto (OSM), extruidas con su altura sobre el terreno. */
+  edificaciones?: Edificacion[]
 }
 
 /** Conversión local (x este, y norte, z cota) → three (X, Y arriba, Z sur). */
@@ -217,6 +221,43 @@ function RasantePlanes({ ctx, env, zRef, ex, selectedEdge }: { ctx: EnvelopeCont
   )
 }
 
+/**
+ * Edificaciones del contexto sobre el terreno del estudio: cada huella se extruye con su altura desde la cota más baja
+ * del terreno bajo ella. Solo las que tienen el centro dentro de la grilla (el terreno del estudio no llega más allá).
+ * Todas van en una geometría: cientos de edificios en una sola llamada de dibujo.
+ */
+function contextBuildings(edificaciones: Edificacion[], dem: HeightGrid, zRef: number, ex: number) {
+  const x1 = dem.x0 + (dem.nx - 1) * dem.cell
+  const y1 = dem.y0 + (dem.ny - 1) * dem.cell
+  const geoms: THREE.BufferGeometry[] = []
+  for (const e of edificaciones) {
+    const c = e.anillo.reduce((s, q) => ({ x: s.x + q.x / e.anillo.length, y: s.y + q.y / e.anillo.length }), { x: 0, y: 0 })
+    if (c.x < dem.x0 || c.x > x1 || c.y < dem.y0 || c.y > y1) continue
+    const zs = e.anillo.map((q) => sampleClamped(dem, q.x, q.y)).filter(Number.isFinite)
+    if (!zs.length) continue
+    const shape = new THREE.Shape(e.anillo.map((q) => new THREE.Vector2(q.x, q.y)))
+    shape.holes = e.huecos.map((h) => new THREE.Path(h.map((q) => new THREE.Vector2(q.x, q.y))))
+    const g = new THREE.ExtrudeGeometry(shape, { depth: e.altura * ex, bevelEnabled: false })
+    // forma en (x, y) local, extruida en +z → three: (x, z, −y)
+    g.rotateX(-Math.PI / 2)
+    g.translate(0, (Math.min(...zs) - zRef) * ex, 0)
+    geoms.push(g)
+  }
+  if (!geoms.length) return null
+  const merged = mergeGeometries(geoms, false)
+  for (const g of geoms) g.dispose()
+  return merged ? { geom: merged, n: geoms.length } : null
+}
+
+function ContextMesh({ geom }: { geom: THREE.BufferGeometry }) {
+  useEffect(() => () => geom.dispose(), [geom])
+  return (
+    <mesh geometry={geom} castShadow receiveShadow>
+      <meshStandardMaterial color="#cbd5e1" roughness={0.85} />
+    </mesh>
+  )
+}
+
 function CameraFit({ target, radius }: { target: THREE.Vector3; radius: number }) {
   const { camera, invalidate } = useThree()
   useEffect(() => {
@@ -246,6 +287,7 @@ export function Scene3D(p: Props) {
   const { min } = useMemo(() => gridStats(p.dem), [p.dem])
   const zRef = min
   const ex = p.exaggeration
+  const ctx = useMemo(() => (p.edificaciones?.length ? contextBuildings(p.edificaciones, p.dem, zRef, ex) : null), [p.edificaciones, p.dem, zRef, ex])
   /**
    * Altura de la envolvente con que se encuadra la cámara. Se fija al cambiar el lote o el terreno; al editar la norma
    * solo se reencuadra si la envolvente crece y quedaría cortada (no en cada cambio, que reiniciaría la órbita).
@@ -276,7 +318,7 @@ export function Scene3D(p: Props) {
   }, [p.lot, p.dem, fitHeight, ex])
 
   return (
-    <div className="absolute inset-0 bg-gradient-to-b from-slate-200 to-slate-50" data-testid="scene3d">
+    <div className="absolute inset-0 bg-gradient-to-b from-slate-200 to-slate-50" data-testid="scene3d" data-edificaciones={ctx?.n ?? 0}>
       <Canvas
         shadows
         camera={{ fov: 40, near: 0.5, far: 20000 }}
@@ -292,6 +334,7 @@ export function Scene3D(p: Props) {
         <Terrain dem={p.dem} zRef={zRef} ex={ex} />
         <Contours contours={p.contours} indexInterval={p.indexInterval} zRef={zRef} ex={ex} />
         {p.lot.length > 2 && <LotOutline lot={p.lot} dem={p.dem} zRef={zRef} ex={ex} />}
+        {ctx && <ContextMesh geom={ctx.geom} />}
         {p.envelope && <EnvelopeBlocks env={p.envelope} zRef={zRef} ex={ex} selectedEdge={p.selectedEdge} />}
         {p.didactic && p.envelope && p.envCtx && (
           <RasantePlanes ctx={p.envCtx} env={p.envelope} zRef={zRef} ex={ex} selectedEdge={p.selectedEdge} />
