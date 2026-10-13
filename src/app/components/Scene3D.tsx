@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import type { XY } from '../../core/geo/local'
 import type { HeightGrid } from '../../core/dem/grid'
 import { gridStats, sampleBilinear } from '../../core/dem/grid'
-import type { Isoline } from '../../core/contours/isolines'
+import { isIndexLevel, type Isoline } from '../../core/contours/isolines'
 import type { EnvelopeResult, EnvelopeContext } from '../../core/envelope/envelope'
 import { GOV_MAX_HEIGHT } from '../../core/envelope/envelope'
 import { outwardNormal, toCCW } from '../../core/envelope/polygon'
@@ -77,8 +77,7 @@ function Contours({ contours, indexInterval, zRef, ex }: { contours: Isoline[]; 
     const minor = new THREE.Color('#7a4a24')
     const major = new THREE.Color('#3b200c')
     for (const c of contours) {
-      const isIndex = Math.abs(c.level / indexInterval - Math.round(c.level / indexInterval)) < 1e-6
-      const cc = isIndex ? major : minor
+      const cc = isIndexLevel(c.level, indexInterval) ? major : minor
       const y = (c.level - zRef) * ex + 0.06
       const n = c.points.length
       const segs = c.closed ? n : n - 1
@@ -248,14 +247,15 @@ export function Scene3D(p: Props) {
   const zRef = min
   const ex = p.exaggeration
   const target = useMemo(() => {
+    // sin lote, la cámara mira al centro del terreno (el área puede no contener el sitio)
     const c = p.lot.length
       ? { x: p.lot.reduce((s, q) => s + q.x, 0) / p.lot.length, y: p.lot.reduce((s, q) => s + q.y, 0) / p.lot.length }
-      : { x: 0, y: 0 }
+      : { x: p.dem.x0 + ((p.dem.nx - 1) * p.dem.cell) / 2, y: p.dem.y0 + ((p.dem.ny - 1) * p.dem.cell) / 2 }
     const z = sampleBilinear(p.dem, c.x, c.y)
     return new THREE.Vector3(c.x, ((Number.isNaN(z) ? zRef : z) - zRef) * ex, -c.y)
   }, [p.lot, p.dem, zRef, ex])
   const radius = useMemo(() => {
-    if (!p.lot.length) return (p.dem.nx * p.dem.cell) / 1.6
+    if (!p.lot.length) return (Math.max(p.dem.nx, p.dem.ny) * p.dem.cell) / 1.6
     const xs = p.lot.map((q) => q.x)
     const ys = p.lot.map((q) => q.y)
     const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys))

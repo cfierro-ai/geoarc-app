@@ -15,8 +15,10 @@ import type { Feature, FeatureCollection } from 'geojson'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 setWorkerUrl(maplibreWorkerUrl)
 import type { LocalFrame, LonLat, XY } from '../../core/geo/local'
-import type { Isoline } from '../../core/contours/isolines'
-import { edgeColor, type MapMode } from '../model'
+import { isIndexLevel, type Isoline } from '../../core/contours/isolines'
+import { cotaLabel } from '../../core/contours/escala'
+import { areaProblem, rectCorners, rectFromCorners, rectSize, type Rect } from '../../core/dem/area'
+import { edgeColor, fmtAreaSize, type MapMode } from '../model'
 
 /** OpenFreeMap, estilo vectorial «Liberty». Sus atribuciones vienen en el TileJSON y MapLibre las muestra. */
 const OFM_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
@@ -75,9 +77,15 @@ const empty: FC = { type: 'FeatureCollection', features: [] }
 interface Props {
   frame: LocalFrame
   site: LonLat
-  areaSize: number
+  /** Área de extracción cerrada. */
+  area: Rect | null
+  /** Primera esquina del área en dibujo. */
+  areaCorner: XY | null
+  loading: boolean
   contours: Isoline[]
   indexInterval: number
+  /** Líneas de la malla del dato (null = no se muestra). */
+  dataGrid: { a: XY; b: XY }[] | null
   lot: XY[]
   draft: XY[]
   mode: MapMode
@@ -86,11 +94,19 @@ interface Props {
   visible: boolean
 }
 
+/** Polígono GeoJSON de un rectángulo local. */
+function rectFeature(r: Rect, ll: (q: XY) => number[]): Feature {
+  const c = rectCorners(r).map(ll)
+  return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[...c, c[0]]] } }
+}
+
 export function MapView(p: Props) {
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<MlMap | null>(null)
   const marker = useRef<Marker | null>(null)
   const [ready, setReady] = useState(false)
+  /** Rectángulo que sigue al cursor mientras se dibuja el área. */
+  const [hoverRect, setHoverRect] = useState<Rect | null>(null)
   const [basemap, setBasemap] = useState<Basemap>('ofm')
   /** Capas del estilo de OpenFreeMap; vacío si no cargó (solo OSM raster); null mientras se carga. */
   const [vectorIds, setVectorIds] = useState<string[] | null>(null)
@@ -130,10 +146,17 @@ export function MapView(p: Props) {
     // del mapa base (vectoriales, con edificios 3D), y en una red lenta curvas y lote tardarían en aparecer.
     m.once('style.load', () => {
       m.addSource('area', { type: 'geojson', data: empty })
+      m.addSource('area-draft', { type: 'geojson', data: empty })
+      m.addSource('datagrid', { type: 'geojson', data: empty })
       m.addSource('contours', { type: 'geojson', data: empty })
       m.addSource('lot', { type: 'geojson', data: empty })
       m.addSource('draft', { type: 'geojson', data: empty })
-      m.addLayer({ id: 'area', type: 'line', source: 'area', paint: { 'line-color': '#334155', 'line-dasharray': [2, 2], 'line-width': 1 } })
+      m.addLayer({ id: 'area-fill', type: 'fill', source: 'area', paint: { 'fill-color': '#334155', 'fill-opacity': 0.04 } })
+      m.addLayer({ id: 'area', type: 'line', source: 'area', paint: { 'line-color': '#334155', 'line-dasharray': [2, 2], 'line-width': 1.2 } })
+      m.addLayer({ id: 'datagrid', type: 'line', source: 'datagrid', paint: { 'line-color': '#0f172a', 'line-width': 0.7, 'line-opacity': 0.4 } })
+      m.addLayer({ id: 'area-draft-fill', type: 'fill', source: 'area-draft', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#0ea5e9', 'fill-opacity': 0.1 } })
+      m.addLayer({ id: 'area-draft-line', type: 'line', source: 'area-draft', filter: ['==', '$type', 'Polygon'], paint: { 'line-color': '#0284c7', 'line-width': 1.5, 'line-dasharray': [2, 1] } })
+      m.addLayer({ id: 'area-draft-pt', type: 'circle', source: 'area-draft', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 4, 'circle-color': '#0284c7', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } })
       m.addLayer({
         id: 'contours',
         type: 'line',
@@ -170,6 +193,12 @@ export function MapView(p: Props) {
       const mode = cb.current.mode
       if (mode !== 'none') cb.current.onPick({ lon: e.lngLat.lng, lat: e.lngLat.lat })
     })
+    // vista previa del área: el rectángulo sigue al cursor desde la primera esquina
+    m.on('mousemove', (e: MapMouseEvent) => {
+      const c = cb.current
+      if (c.mode !== 'area' || !c.areaCorner) return
+      setHoverRect(rectFromCorners(c.areaCorner, c.frame.toLocal({ lon: e.lngLat.lng, lat: e.lngLat.lat })))
+    })
     m.on('dblclick', (e: MapMouseEvent) => {
       if (cb.current.mode === 'lot') {
         e.preventDefault()
@@ -196,9 +225,45 @@ export function MapView(p: Props) {
     const m = map.current
     if (!m || !ready) return
     m.getCanvas().style.cursor = p.mode === 'none' ? '' : 'crosshair'
-    if (p.mode === 'lot') m.doubleClickZoom.disable()
+    // dos clics seguidos (lote o esquinas del área) no deben hacer zoom
+    if (p.mode === 'lot' || p.mode === 'area') m.doubleClickZoom.disable()
     else m.doubleClickZoom.enable()
   }, [p.mode, ready])
+
+  // sin primera esquina (o fuera del modo área) no hay vista previa
+  useEffect(() => {
+    if (p.mode !== 'area' || !p.areaCorner) setHoverRect(null)
+  }, [p.mode, p.areaCorner])
+
+  useEffect(() => {
+    const m = map.current
+    if (!m || !ready) return
+    const ll = (q: XY) => {
+      const g = p.frame.toLonLat(q)
+      return [g.lon, g.lat]
+    }
+    const fs: Feature[] = []
+    if (p.mode === 'area' && p.areaCorner) {
+      fs.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: ll(p.areaCorner) } })
+      if (hoverRect) fs.push(rectFeature(hoverRect, ll))
+    }
+    ;(m.getSource('area-draft') as GeoJSONSource).setData({ type: 'FeatureCollection', features: fs })
+  }, [p.frame, p.mode, p.areaCorner, hoverRect, ready])
+
+  useEffect(() => {
+    const m = map.current
+    if (!m || !ready) return
+    const ll = (q: XY) => {
+      const g = p.frame.toLonLat(q)
+      return [g.lon, g.lat]
+    }
+    ;(m.getSource('datagrid') as GeoJSONSource).setData({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'MultiLineString', coordinates: (p.dataGrid ?? []).map((l) => [ll(l.a), ll(l.b)]) },
+    })
+    m.getContainer().setAttribute('data-malla', String(p.dataGrid?.length ?? 0))
+  }, [p.frame, p.dataGrid, ready])
 
   useEffect(() => {
     const m = map.current
@@ -215,26 +280,21 @@ export function MapView(p: Props) {
       const g = p.frame.toLonLat(q)
       return [g.lon, g.lat]
     }
-    const h = p.areaSize / 2
     m.getContainer().removeAttribute('data-idle')
-    ;(m.getSource('area') as GeoJSONSource).setData({
-      type: 'Feature',
-      properties: {},
-      geometry: { type: 'LineString', coordinates: [ll({ x: -h, y: -h }), ll({ x: h, y: -h }), ll({ x: h, y: h }), ll({ x: -h, y: h }), ll({ x: -h, y: -h })] },
-    })
+    ;(m.getSource('area') as GeoJSONSource).setData({ type: 'FeatureCollection', features: p.area ? [rectFeature(p.area, ll)] : [] })
     ;(m.getSource('contours') as GeoJSONSource).setData({
       type: 'FeatureCollection',
       features: p.contours.map((c) => {
-        const isIndex = Math.abs(c.level / p.indexInterval - Math.round(c.level / p.indexInterval)) < 1e-6
         const coords = c.points.map(ll)
         if (c.closed && coords.length) coords.push(coords[0])
         return {
           type: 'Feature',
-          properties: { level: c.level, index: isIndex, label: `${Math.round(c.level * 10) / 10} m` },
+          properties: { level: c.level, index: isIndexLevel(c.level, p.indexInterval), label: `${cotaLabel(c.level)} m` },
           geometry: { type: 'LineString', coordinates: coords },
         }
       }),
     })
+    m.getContainer().setAttribute('data-curvas', String(p.contours.length))
     const lotFeatures: Feature[] = []
     if (p.lot.length > 2) {
       lotFeatures.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[...p.lot.map(ll), ll(p.lot[0])]] } })
@@ -247,7 +307,23 @@ export function MapView(p: Props) {
     const dr: Feature[] = p.draft.map((q) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: ll(q) } }))
     if (p.draft.length > 1) dr.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: p.draft.map(ll) } })
     ;(m.getSource('draft') as GeoJSONSource).setData({ type: 'FeatureCollection', features: dr })
-  }, [p.frame, p.areaSize, p.contours, p.indexInterval, p.lot, p.draft, ready])
+  }, [p.frame, p.area, p.contours, p.indexInterval, p.lot, p.draft, ready])
+
+  const hoverProblem = hoverRect && areaProblem(hoverRect)
+  const banner =
+    p.mode === 'site'
+      ? 'Haz clic en el mapa para fijar el sitio'
+      : p.mode === 'lot'
+        ? 'Clic: agregar vértice · Doble clic: cerrar lote'
+        : p.mode === 'area'
+          ? !p.areaCorner
+            ? 'Clic: primera esquina del área · Esc: cancelar'
+            : hoverRect
+              ? `Clic: esquina opuesta · ${fmtAreaSize(rectSize(hoverRect).w, rectSize(hoverRect).h)}`
+              : 'Clic: esquina opuesta del área'
+          : p.loading
+            ? 'Descargando el terreno…'
+            : null
 
   return (
     <div className="absolute inset-0">
@@ -270,9 +346,13 @@ export function MapView(p: Props) {
           )
         })}
       </div>
-      {p.mode !== 'none' && (
-        <div className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-md bg-sky-600 px-3 py-1 text-xs text-white shadow">
-          {p.mode === 'site' ? 'Haz clic en el mapa para fijar el sitio' : 'Clic: agregar vértice · Doble clic: cerrar lote'}
+      {banner && (
+        <div
+          className={`pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-md px-3 py-1 text-xs text-white shadow ${p.mode === 'none' ? 'bg-slate-700' : 'bg-sky-600'}`}
+          data-testid="map-banner"
+        >
+          {banner}
+          {hoverProblem && <span className="ml-1 font-semibold text-amber-200">· {hoverProblem}</span>}
         </div>
       )}
     </div>

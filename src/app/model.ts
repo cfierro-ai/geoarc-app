@@ -5,22 +5,36 @@ import { reglaPorRol } from '../core/normativa/perfiles'
 
 export type DemSourceId = 'copernicus' | 'terrarium' | 'sintetico'
 
-export const DEM_SOURCES: { id: DemSourceId; label: string; hint: string }[] = [
-  { id: 'terrarium', label: 'Terrarium / SRTM (global)', hint: 'Referencial; ~30 m en Chile.' },
+export interface DemSourceInfo {
+  id: DemSourceId
+  label: string
+  hint: string
+  /** Si está, la fuente se muestra en el selector pero no se puede elegir; el texto dice por qué. */
+  disabled?: string
+}
+
+export const DEM_SOURCES: DemSourceInfo[] = [
+  { id: 'terrarium', label: 'Terrarium / SRTM (automático)', hint: 'Se descarga solo al cerrar el área. Global; ~30 m en Chile; referencial.' },
   {
     id: 'copernicus',
-    label: 'Copernicus GLO-30 (DSM, global)',
-    hint: 'Superficie: incluye árboles y edificios. Hoy su servidor no permite lectura desde el navegador (CORS); si falla, se usa Terrarium.',
+    label: 'Copernicus GLO-30 (DSM)',
+    hint: 'Superficie: incluye árboles y edificios. Su servidor no permite lectura desde el navegador (CORS).',
+    disabled: 'requiere proxy',
   },
-  { id: 'sintetico', label: 'Ladera sintética (sin conexión)', hint: 'Para práctica y pruebas.' },
+  { id: 'sintetico', label: 'Ladera sintética (sin conexión)', hint: 'Terreno inventado, para clases sin internet y pruebas. Se genera en el área dibujada.' },
 ]
+
+export const isSourceAvailable = (id: DemSourceId) => !DEM_SOURCES.find((d) => d.id === id)?.disabled
+
+/** Curvas maestras: una de cada N curvas. */
+export const INDEX_EVERY_OPTIONS = [2, 4, 5, 10]
 
 export interface EdgeSetting {
   role: EdgeRole
   rule: EdgeRule
 }
 
-export type MapMode = 'none' | 'site' | 'lot'
+export type MapMode = 'none' | 'site' | 'area' | 'lot'
 
 export const EDGE_COLORS = ['#e4572e', '#17bebb', '#f2b705', '#76b041', '#8e6bbf', '#2e86ab', '#f28482', '#a0522d']
 export const MAX_HEIGHT_COLOR = '#9aa3ad'
@@ -60,17 +74,10 @@ export const TEMUCO: LonLat = { lon: -72.5985, lat: -38.739 }
 export const fmt = (v: number, d = 1) =>
   Number.isFinite(v) ? v.toLocaleString('es-CL', { maximumFractionDigits: d, minimumFractionDigits: d }) : '—'
 
-/** Archivo de escena .geoarc (JSON). */
-export interface SceneFile {
-  format: 'geoarc'
-  version: 1
-  site: LonLat
-  areaSize: number
-  cell: number
-  demSource: DemSourceId
-  contourInterval: number
-  lotLonLat: LonLat[]
-  profileId: PerfilNormativo['id']
-  maxHeight: number
-  edges: EdgeSetting[]
+/** Número con los decimales justos (hasta `d`): 2 → «2», 1,25 → «1,25». */
+export const fmtNum = (v: number, d = 2) => (Number.isFinite(v) ? v.toLocaleString('es-CL', { maximumFractionDigits: d }) : '—')
+
+/** Tamaño de un área: «312 × 180 m · 5,62 ha». */
+export function fmtAreaSize(w: number, h: number): string {
+  return `${fmt(w, 0)} × ${fmt(h, 0)} m · ${fmt((w * h) / 10_000, 2)} ha`
 }

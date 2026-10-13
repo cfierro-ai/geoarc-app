@@ -31,12 +31,14 @@ Antes de dar una tarea por terminada: `npm test && npm run typecheck && npm run 
 src/core/            lógica pura, sin React. Testeable en Node.
   geo/local.ts       marco métrico local: UTM automático según el sitio; (x,y) = (E−E0, N−N0)
   dem/               grilla de elevación, fuentes (Copernicus, Terrarium, sintética), remuestreo
-  contours/          isolíneas por marching squares (cosido de segmentos, sillas resueltas)
+  dem/area.ts        área de extracción (rectángulo UTM) y celda automática (~250 celdas en el lado menor, tope 2 000)
+  contours/          isolíneas por marching squares (cosido de segmentos, sillas resueltas), rótulos de cota
+  contours/escala.ts escala confiable y equidistancia mínima según la resolución del dato — ÚNICO lugar del criterio
   envelope/          envolvente como CAMPO DE ALTURAS + utilidades de polígono
   export/            DXF R12 (curvas, lote, envolvente) en UTM absolutas
   normativa/         perfiles normativos — ÚNICO lugar con valores normativos
 src/app/             UI React: panel por pasos, mapa (MapLibre), vista 3D (React-Three-Fiber)
-e2e/                 Playwright: flujo completo y regresión del dibujo de lote
+e2e/                 Playwright: flujo completo, módulo de curvas y regresión del dibujo de lote (ayudas en util.ts)
 ```
 
 ### Modelo de la envolvente (núcleo del producto)
@@ -76,7 +78,10 @@ techo(p) = min( suelo(p) + Hmax ,  min_lados_i  min_{q ∈ lado_i}  [ suelo(q) +
 - El doble clic del mapa dispara dos clics antes: `cleanRing` en `App.tsx` elimina vértices repetidos.
 - Lectura de Copernicus: respetar `GTRasterTypeGeoKey` (PixelIsPoint vs PixelIsArea); un error ahí desplaza ~15 m.
 - CORS verificado (2026-10-09, `docs/decisiones.md`): Terrarium responde `Access-Control-Allow-Origin: *`; el bucket
-  de Copernicus **no tiene CORS** y el navegador bloquea la lectura. `loadDem` cae a Terrarium y avisa en el panel.
-  Para usar Copernicus en la web hace falta un proxy (backlog en `SPEC.md`).
+  de Copernicus **no tiene CORS** y el navegador bloquea la lectura. Copernicus aparece deshabilitado en el selector
+  («requiere proxy»); `loadDem` conserva el respaldo a Terrarium para cuando exista el proxy (backlog en `SPEC.md`).
+- El terreno se carga sin botón (al cerrar el área, cambiar de fuente o abrir escena) y el selector de fuente está
+  dentro de «Opciones avanzadas» (`<details>` plegado): en e2e hay que abrirlo antes (`usarLaderaSintetica` en `e2e/util.ts`).
+- El área es un rectángulo **UTM**: en el mapa se ve girado según la convergencia de meridianos. No es un error.
 - Vista 3D con `frameloop='demand'`: todo cambio fuera de las props de React (matrices/colores de instancias, cámara)
   debe llamar a `invalidate()`. R3F 9.8.1 no redibuja al desmontar objetos; lo cubre `RedrawOnUpdate` en `Scene3D.tsx`.

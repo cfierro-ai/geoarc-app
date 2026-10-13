@@ -15,7 +15,7 @@ y desde dónde nace cada rasante.
 | Paso | Qué hace | Estado v0.1 |
 |---|---|---|
 | 1. Sitio | Búsqueda por dirección (Nominatim, con respaldo a Photon) o «lat, lon», o clic en mapa (OpenFreeMap; OSM raster y satélite como alternativas). Marco UTM automático. | Hecho |
-| 2. Terreno | DEM: Terrarium/SRTM (por defecto), Copernicus GLO-30 (DSM), ladera sintética. Curvas con equidistancia y maestras. Metadatos y advertencias (DSM, precisión aparente). | Hecho. CORS verificado: Terrarium OK; Copernicus bloqueado (su bucket no tiene CORS) → respaldo automático a Terrarium con aviso |
+| 2. Área y curvas | Área de extracción libre (rectángulo de dos clics, en m y ha) con celda automática (~250 celdas en el lado menor; tope 2 000 por lado). Al cerrarla, Terrarium/SRTM se descarga solo y aparecen las curvas. Escala confiable del dato (Tobler) con la equidistancia mínima sugerida preseleccionada; malla del dato opcional; DXF de curvas (CURVAS, CURVAS_MAESTRAS, ETIQUETAS, AREA). Fuente en «Opciones avanzadas»: ladera sintética (sin conexión) y Copernicus GLO-30 deshabilitado («requiere proxy»). | Hecho (v0.2). Criterio de escala por confirmar con Chris |
 | 3. Lote | Dibujo en planta sobre el mapa (clic/doble clic) o lote de ejemplo. | Hecho |
 | 4. Norma | Perfil OGUC Chile / Personalizado. Altura máxima. Por lado: rol (deslinde, frente, sin rasante), ángulo, arranque, distanciamiento, eje de calle. | Hecho (valores OGUC por verificar) |
 | 5. Resultados | Superficie, huella, volumen, altura máx.; reparto de qué restricción gobierna; 3D con planos de rasante; DXF (UTM) y PNG; guardar/abrir `.geoarc`. | Hecho |
@@ -41,10 +41,11 @@ y desde dónde nace cada rasante.
 
 **Alta**
 1. Proxy liviano para Copernicus (p. ej. Cloudflare Worker que reenvíe `Range` y agregue CORS), documentado antes en
-   `docs/decisiones.md`. El CORS ya está verificado: Copernicus no tiene CORS (hoy se usa Terrarium como respaldo).
+   `docs/decisiones.md`. El CORS ya está verificado: Copernicus no tiene CORS (hoy aparece deshabilitado en el selector).
 2. Perfil OGUC verificado por Chris: tabla de ángulos por región, arranque, distanciamientos, regla sobre 10,5 m (si aplica). Tests que lo fijen.
 3. Asignación de región por point-in-polygon (límites regionales oficiales) en vez de manual.
-4. Importar levantamiento topográfico DXF (curvas/puntos con cota → TIN → grilla).
+4. Importar levantamiento topográfico DXF (curvas/puntos con cota → TIN → grilla). Es la otra excepción del módulo de
+   curvas en la que el profesor carga su propio terreno.
 
 **Media**
 5. Volumen propuesto (dibujado o importado) vs envolvente, con verificación visual de excesos.

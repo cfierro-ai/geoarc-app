@@ -158,3 +158,51 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
   por defecto. Tests unitarios con fetch simulado y e2e con Nominatim respondiendo 429.
 - **Atribuciones:** el mapa muestra la del mapa base activo (control no compacto), la lista de resultados indica qué
   buscador respondió, y el README las detalla todas.
+
+## 2026-10-10 · v0.2 · Módulo Curvas de nivel (Chris)
+
+### Pedido
+- Flujo del profesor: **ubicar el sitio → dibujar el área → las curvas aparecen**. El terreno se descarga solo
+  (Terrarium). El profesor no elige ni carga un DEM, salvo «ladera sintética» si no hay internet (o un levantamiento
+  DXF, todavía pendiente). El selector de fuente queda en «Opciones avanzadas», plegado.
+
+### Decisiones de implementación
+- **Área de extracción:** rectángulo de dos clics alineado con la cuadrícula **UTM** del sitio, no con el norte
+  geográfico, para que el DXF quede alineado con los ejes del CAD. En el mapa se ve girado según la convergencia de
+  meridianos (~1,5° en Temuco, huso 18). La vista previa muestra el tamaño en metros y hectáreas. Lado mínimo 10 m;
+  máximo 20 km (tope de cordura, no pedido; `MAX_AREA_SIDE`). Esc cancela.
+- **Celda automática** (`src/core/dem/area.ts`): «~250 celdas por lado» se interpreta sobre el lado **menor**, y
+  «cap 2 000 × 2 000» como tope de celdas por lado de la grilla (pesa en áreas de proporción mayor a 8:1). La celda se
+  redondea a la serie 1–1,25–1,5–2–2,5–3–4–5–6–8 y nunca baja de 0,25 m. Si el tope quería decir 2 000 × 2 000 **m**
+  de área máxima, basta cambiar `MAX_AREA_SIDE`.
+- **Carga sin botón:** al cerrar el área, al cambiar de fuente o al abrir una escena. Cada carga lleva un número de
+  secuencia y una respuesta vieja se descarta. Si falla, el panel ofrece «Reintentar».
+- **Terrarium con zoom adaptativo:** se pide el zoom más bajo cuyo píxel no supera la celda (tope z14). Un área grande
+  pide pocas teselas. Si el píxel supera 30 m, `nominalResolutionM` pasa a ser el tamaño del píxel.
+- **Escala confiable** (`src/core/contours/escala.ts`, único lugar del criterio; es cartográfico y docente, no
+  normativo):
+  - Escala: regla de Tobler (1987): denominador = 2 000 × resolución. Un dato de 30 m ⇒ **1:60.000**.
+  - Equidistancia mínima sugerida: ≈ denominador / 2 500 (series topográficas usuales: 1:25.000 → 10 m;
+    1:50.000 → 20 m), redondeada hacia arriba en la serie 1–2–2,5–5. Para Terrarium ⇒ **25 m**.
+  - Se preselecciona al cargar el dato, y solo se vuelve a preseleccionar si cambia la resolución. Las equidistancias
+    menores siguen en el selector, marcadas «aparente», y se muestra el aviso de precisión aparente.
+  - **Por revisar con Chris:** con Terrarium, 25 m deja pocas curvas en un área del tamaño de un sitio. Es el mensaje
+    docente, pero puede preferir otro factor.
+- **Malla del dato:** líneas cada `nominalResolutionM`, en múltiplos desde el origen del marco. Muestra el **tamaño**
+  de la celda del dato, no la posición exacta de sus píxeles (SRTM es una grilla de 1″ en lon/lat).
+- **DXF de curvas:** capas CURVAS, CURVAS_MAESTRAS, ETIQUETAS (TEXT centrado con la cota, alineado a la curva y
+  siempre legible) y AREA (polilínea 2D cerrada a cota 0). LOTE y ENVOLVENTE solo se agregan si hay lote. La altura de
+  texto es de 2,5 mm al imprimir el lado mayor del área en 400 mm (A3), es decir, lado / 160. Va un rótulo cada
+  ~40 alturas de texto. Se validó con ezdxf 1.4.4 (lectura estricta y auditoría: 0 errores, 0 arreglos). **Falta
+  abrirlo en AutoCAD LT / Revit.**
+- **Copernicus:** visible y deshabilitado («requiere proxy»). Una escena `.geoarc` que lo use se abre con Terrarium y
+  se avisa. `loadDem` conserva el respaldo Copernicus → Terrarium para cuando exista el proxy. Ya no cambia el
+  selector: la carga ahora se dispara al cambiar de fuente.
+- **`.geoarc` v2:** el área se guarda como esquinas SO y NE en lon/lat (igual que el lote) y la celda ya no se guarda.
+  Los archivos v1 se siguen abriendo (su cuadrado centrado pasa a rectángulo).
+- **e2e:** `respaldo.spec.ts` (elegir Copernicus en el selector) deja de tener sentido. Lo reemplaza `curvas.spec.ts`,
+  que intercepta Terrarium con un plano inclinado continuo entre teselas y verifica que Copernicus no se pida nunca.
+
+### Pendientes
+- Importar levantamiento DXF (backlog alta #4).
+- Chris: confirmar el criterio de escala y equidistancia, y la interpretación del tope 2 000 × 2 000.

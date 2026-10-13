@@ -1,16 +1,19 @@
-import { useCallback, useMemo, useState } from 'react'
-import { createLocalFrame, type LonLat, type XY } from './core/geo/local'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createLocalFrame, type LocalFrame, type LonLat, type XY } from './core/geo/local'
 import type { HeightGrid } from './core/dem/grid'
 import { gridStats, sampleBilinear } from './core/dem/grid'
+import { areaProblem, autoCell, dataGridLines, pointInRect, rectFromCorners, type Rect } from './core/dem/area'
 import { contourLevels, isolines } from './core/contours/isolines'
+import { contarNiveles, escalaConfiable, MAX_NIVELES } from './core/contours/escala'
 import { computeEnvelope, prepare, suggestedCell } from './core/envelope/envelope'
 import { PERFILES, PERFIL_OGUC, reglaPorRol, type EdgeRole } from './core/normativa/perfiles'
 import { sceneToDxf } from './core/export/sceneDxf'
 import { loadDem } from './app/demLoader'
-import { defaultEdges, exampleLot, TEMUCO, type DemSourceId, type EdgeSetting, type MapMode, type SceneFile } from './app/model'
+import { defaultEdges, exampleLot, isSourceAvailable, TEMUCO, type DemSourceId, type EdgeSetting, type MapMode } from './app/model'
+import { parseScene, serializeScene } from './app/scene'
 import { MapView } from './app/components/MapView'
 import { Scene3D } from './app/components/Scene3D'
-import { Panel } from './app/components/Panel'
+import { Panel, type DemStatus } from './app/components/Panel'
 
 export type View = 'mapa' | '3d'
 
@@ -33,13 +36,14 @@ function cleanRing(pts: XY[], tol = 0.3): XY[] {
 
 export default function App() {
   const [site, setSite] = useState<LonLat>(TEMUCO)
-  const [areaSize, setAreaSize] = useState(200)
-  const [cell, setCell] = useState(2)
+  const [area, setArea] = useState<Rect | null>(null)
+  const [areaCorner, setAreaCorner] = useState<XY | null>(null)
   const [demSource, setDemSource] = useState<DemSourceId>('terrarium')
   const [dem, setDem] = useState<HeightGrid | null>(null)
-  const [demStatus, setDemStatus] = useState<{ state: 'idle' | 'loading' | 'error'; msg?: string; warn?: string }>({ state: 'idle' })
+  const [demStatus, setDemStatus] = useState<DemStatus>({ state: 'idle' })
   const [contourInterval, setContourInterval] = useState(1)
-  const [indexInterval, setIndexInterval] = useState(5)
+  const [indexEvery, setIndexEvery] = useState(5)
+  const [showDataGrid, setShowDataGrid] = useState(false)
   const [lot, setLot] = useState<XY[]>([])
   const [draft, setDraft] = useState<XY[]>([])
   const [mode, setMode] = useState<MapMode>('none')
@@ -51,14 +55,28 @@ export default function App() {
   const [selectedEdge, setSelectedEdge] = useState<number | null>(null)
   const [exaggeration, setExaggeration] = useState(1)
 
+  /** Cada carga lleva un número; una respuesta que llega después de otra carga más nueva se descarta. */
+  const loadSeq = useRef(0)
+  /** Resolución del último dato cargado: la equidistancia sugerida solo se vuelve a preseleccionar si cambia. */
+  const lastRes = useRef<number | null>(null)
+
   const frame = useMemo(() => createLocalFrame(site), [site])
   const profile = PERFILES.find((p) => p.id === profileId) ?? PERFIL_OGUC
+  const cell = useMemo(() => (area ? autoCell(area) : null), [area])
+  const indexInterval = contourInterval * indexEvery
+  const shownView: View = dem ? view : 'mapa'
 
   const contours = useMemo(() => {
     if (!dem) return []
     const { min, max } = gridStats(dem)
+    if (contarNiveles(min, max, contourInterval) > MAX_NIVELES) return []
     return isolines(dem, contourLevels(min, max, contourInterval))
   }, [dem, contourInterval])
+
+  const dataGrid = useMemo(
+    () => (showDataGrid && dem && area ? dataGridLines(area, dem.meta.nominalResolutionM) : null),
+    [showDataGrid, dem, area],
+  )
 
   const terrain = useCallback((x: number, y: number) => (dem ? sampleBilinear(dem, x, y) : NaN), [dem])
 
@@ -69,32 +87,64 @@ export default function App() {
   const envelope = useMemo(() => (envInput ? computeEnvelope(envInput) : undefined), [envInput])
   const envCtx = useMemo(() => (envInput ? prepare(envInput) : undefined), [envInput])
 
+  const lotOutside = !!area && lot.length > 2 && lot.some((p) => !pointInRect(p, area))
+
+  /** Descarga (o genera) el terreno del área. Sin botón: se llama al cerrar el área, al cambiar de fuente o al abrir una escena. */
+  async function load(a: Rect, src: DemSourceId, fr: LocalFrame, opts: { interval?: number; notice?: string } = {}) {
+    const seq = ++loadSeq.current
+    setDem(null)
+    setDemStatus({ state: 'loading' })
+    try {
+      const r = await loadDem(src, fr, a, autoCell(a))
+      if (seq !== loadSeq.current) return
+      if (!Number.isFinite(gridStats(r.grid).min)) throw new Error('La fuente no devolvió datos para esta zona.')
+      const res = r.grid.meta.nominalResolutionM
+      if (opts.interval !== undefined) setContourInterval(opts.interval)
+      else if (res !== lastRes.current) setContourInterval(escalaConfiable(res).equidistanciaMinima)
+      lastRes.current = res
+      setDem(r.grid)
+      const warn = r.fallbackFrom ? 'Copernicus no disponible; se usó Terrarium.' : opts.notice
+      setDemStatus({ state: 'idle', warn })
+    } catch (e) {
+      if (seq !== loadSeq.current) return
+      setDemStatus({ state: 'error', msg: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
   const actions = {
     setSite(p: LonLat) {
+      loadSeq.current++ // descarta una descarga en curso del sitio anterior
       setSite(p)
+      setArea(null)
+      setAreaCorner(null)
       setDem(null)
       setLot([])
       setEdges([])
       setDraft([])
       setDemStatus({ state: 'idle' })
     },
-    async loadTerrain() {
-      setDemStatus({ state: 'loading' })
-      try {
-        const r = await loadDem(demSource, frame, areaSize, cell)
-        const st = gridStats(r.grid)
-        if (!Number.isFinite(st.min)) throw new Error('La fuente no devolvió datos para esta zona.')
-        setDem(r.grid)
-        if (r.fallbackFrom) {
-          setDemSource(r.source)
-          setDemStatus({ state: 'idle', warn: 'Copernicus no disponible; se usó Terrarium.' })
-        } else setDemStatus({ state: 'idle' })
-      } catch (e) {
-        setDemStatus({ state: 'error', msg: e instanceof Error ? e.message : String(e) })
-      }
+    startArea() {
+      setAreaCorner(null)
+      setDraft([])
+      setMode('area')
+      setView('mapa')
+    },
+    cancelDraw() {
+      setMode('none')
+      setAreaCorner(null)
+      setDraft([])
+    },
+    setDemSource(src: DemSourceId) {
+      if (!isSourceAvailable(src)) return
+      setDemSource(src)
+      if (area) void load(area, src, frame)
+    },
+    retry() {
+      if (area) void load(area, demSource, frame)
     },
     startLot() {
       setDraft([])
+      setAreaCorner(null)
       setMode('lot')
       setView('mapa')
     },
@@ -107,10 +157,6 @@ export default function App() {
         setEdges(defaultEdges(ring.length, profile))
         setSelectedEdge(null)
       }
-    },
-    cancelLot() {
-      setMode('none')
-      setDraft([])
     },
     exampleLot() {
       const l = exampleLot()
@@ -138,8 +184,12 @@ export default function App() {
     applyToAll(k: number) {
       setEdges((es) => es.map((e) => ({ ...e, rule: { ...e.rule, angleDeg: es[k].rule.angleDeg, startHeight: es[k].rule.startHeight } })))
     },
+    exportContoursDxf() {
+      const dxf = sceneToDxf({ frame, contours, indexInterval, area: area ?? undefined })
+      download(`geoarc_curvas_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_UTM${frame.zone}${frame.south ? 'S' : 'N'}.dxf`, dxf, 'application/dxf')
+    },
     exportDxf() {
-      const dxf = sceneToDxf({ frame, contours, indexInterval, lot, lotZ: (p) => terrain(p.x, p.y), envelope })
+      const dxf = sceneToDxf({ frame, contours, indexInterval, area: area ?? undefined, lot, lotZ: (p) => terrain(p.x, p.y), envelope })
       download(`geoarc_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_UTM${frame.zone}${frame.south ? 'S' : 'N'}.dxf`, dxf, 'application/dxf')
     },
     exportPng() {
@@ -148,36 +198,26 @@ export default function App() {
       c.toBlob((b) => b && download('geoarc_vista3d.png', b, 'image/png'))
     },
     saveScene() {
-      const f: SceneFile = {
-        format: 'geoarc',
-        version: 1,
-        site,
-        areaSize,
-        cell,
-        demSource,
-        contourInterval,
-        lotLonLat: lot.map((p) => frame.toLonLat(p)),
-        profileId,
-        maxHeight,
-        edges,
-      }
+      const f = serializeScene({ site, area, demSource, contourInterval, indexEvery, lot, profileId, maxHeight, edges })
       download('escena.geoarc', JSON.stringify(f, null, 2), 'application/json')
     },
     async openScene(file: File) {
-      const f = JSON.parse(await file.text()) as SceneFile
-      if (f.format !== 'geoarc') throw new Error('Archivo no reconocido')
-      const fr = createLocalFrame(f.site)
-      setSite(f.site)
-      setAreaSize(f.areaSize)
-      setCell(f.cell)
-      setDemSource(f.demSource)
-      setContourInterval(f.contourInterval)
-      setProfileId(f.profileId)
-      setMaxHeight(f.maxHeight)
-      setLot(f.lotLonLat.map((p) => fr.toLocal(p)))
-      setEdges(f.edges)
+      const s = parseScene(await file.text())
+      loadSeq.current++
+      setSite(s.site)
+      setArea(s.area)
+      setAreaCorner(null)
+      setMode('none')
+      setDemSource(s.demSource)
+      setContourInterval(s.contourInterval)
+      setIndexEvery(s.indexEvery)
+      setProfileId(s.profileId)
+      setMaxHeight(s.maxHeight)
+      setLot(s.lot)
+      setEdges(s.edges)
       setDem(null)
-      setDemStatus({ state: 'idle', msg: 'Escena abierta. Carga el terreno para recalcular.' })
+      setDemStatus({ state: 'idle', warn: s.notice })
+      if (s.area) void load(s.area, s.demSource, createLocalFrame(s.site), { interval: s.contourInterval, notice: s.notice })
     },
   }
 
@@ -185,8 +225,30 @@ export default function App() {
     if (mode === 'site') {
       actions.setSite(p)
       setMode('none')
+    } else if (mode === 'area') {
+      const q = frame.toLocal(p)
+      if (!areaCorner) return setAreaCorner(q)
+      const r = rectFromCorners(areaCorner, q)
+      if (areaProblem(r)) return // el aviso del mapa explica por qué; se espera otro clic
+      setAreaCorner(null)
+      setMode('none')
+      setArea(r)
+      void load(r, demSource, frame)
     } else if (mode === 'lot') setDraft((d) => [...d, frame.toLocal(p)])
   }
+
+  // Esc cancela el dibujo en curso (área, lote o sitio)
+  useEffect(() => {
+    if (mode === 'none') return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setMode('none')
+      setAreaCorner(null)
+      setDraft([])
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mode])
 
   return (
     <div className="flex h-full flex-col bg-slate-50 text-slate-800">
@@ -201,7 +263,7 @@ export default function App() {
               key={v}
               onClick={() => setView(v)}
               disabled={v === '3d' && !dem}
-              className={`px-3 py-1 disabled:opacity-40 ${view === v ? 'bg-slate-800 text-white' : 'hover:bg-slate-100'}`}
+              className={`px-3 py-1 disabled:opacity-40 ${shownView === v ? 'bg-slate-800 text-white' : 'hover:bg-slate-100'}`}
             >
               {v === 'mapa' ? 'Mapa' : 'Vista 3D'}
             </button>
@@ -211,30 +273,34 @@ export default function App() {
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <Panel
           s={{
-            site, frame, areaSize, cell, demSource, dem, demStatus, contourInterval, indexInterval, lot, draft, mode,
-            profile, maxHeight, edges, envelope, didactic, selectedEdge, exaggeration, view,
+            site, frame, area, areaCorner, cell, demSource, dem, demStatus, contourInterval, indexEvery, showDataGrid,
+            dataGridShown: !!dataGrid, lot, lotOutside, draft, mode, profile, maxHeight, edges, envelope, didactic,
+            selectedEdge, exaggeration, view: shownView,
           }}
-          set={{ setAreaSize, setCell, setDemSource, setContourInterval, setIndexInterval, setMode, setMaxHeight, setDidactic, setSelectedEdge, setExaggeration, setView }}
+          set={{ setContourInterval, setIndexEvery, setShowDataGrid, setMode, setMaxHeight, setDidactic, setSelectedEdge, setExaggeration, setView }}
           act={actions}
         />
         <main className="relative min-h-[420px] flex-1">
-          <div className={`absolute inset-0 ${view === 'mapa' ? '' : 'invisible'}`}>
+          <div className={`absolute inset-0 ${shownView === 'mapa' ? '' : 'invisible'}`}>
             <MapView
               frame={frame}
               site={site}
-              areaSize={areaSize}
+              area={area}
+              areaCorner={areaCorner}
+              loading={demStatus.state === 'loading'}
               contours={contours}
               indexInterval={indexInterval}
+              dataGrid={dataGrid}
               lot={lot}
               draft={draft}
               mode={mode}
               onPick={onPick}
               onFinishLot={actions.finishLot}
-              visible={view === 'mapa'}
+              visible={shownView === 'mapa'}
             />
           </div>
           {dem && (
-            <div className={`absolute inset-0 ${view === '3d' ? 'z-10' : 'invisible'}`}>
+            <div className={`absolute inset-0 ${shownView === '3d' ? 'z-10' : 'invisible'}`}>
               <Scene3D
                 dem={dem}
                 contours={contours}
@@ -245,7 +311,7 @@ export default function App() {
                 didactic={didactic}
                 selectedEdge={selectedEdge}
                 exaggeration={exaggeration}
-                visible={view === '3d'}
+                visible={shownView === '3d'}
               />
             </div>
           )}

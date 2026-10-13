@@ -2,25 +2,51 @@ import { useMemo, useRef, useState, type ReactNode } from 'react'
 import type { LocalFrame, LonLat, XY } from '../../core/geo/local'
 import type { HeightGrid } from '../../core/dem/grid'
 import { gridStats } from '../../core/dem/grid'
+import { gridCells, rectSize, type Rect } from '../../core/dem/area'
+import { contarNiveles, escalaConfiable, MAX_NIVELES, opcionesEquidistancia } from '../../core/contours/escala'
 import type { EnvelopeResult } from '../../core/envelope/envelope'
 import { GOV_MAX_HEIGHT } from '../../core/envelope/envelope'
 import { area, facing, outwardNormal, toCCW } from '../../core/envelope/polygon'
 import { PERFILES, perfilVerificado, type EdgeRole, type PerfilNormativo } from '../../core/normativa/perfiles'
-import { DEM_SOURCES, edgeColor, fmt, MAX_HEIGHT_COLOR, ROLE_LABEL, type DemSourceId, type EdgeSetting, type MapMode } from '../model'
+import {
+  DEM_SOURCES,
+  edgeColor,
+  fmt,
+  fmtAreaSize,
+  fmtNum,
+  INDEX_EVERY_OPTIONS,
+  MAX_HEIGHT_COLOR,
+  ROLE_LABEL,
+  type DemSourceId,
+  type EdgeSetting,
+  type MapMode,
+} from '../model'
 import type { View } from '../../App'
 import { geocode, type GeocodeResponse, type GeoResult } from '../geocode'
+
+export interface DemStatus {
+  state: 'idle' | 'loading' | 'error'
+  msg?: string
+  warn?: string
+}
 
 interface State {
   site: LonLat
   frame: LocalFrame
-  areaSize: number
-  cell: number
+  area: Rect | null
+  areaCorner: XY | null
+  cell: number | null
   demSource: DemSourceId
   dem: HeightGrid | null
-  demStatus: { state: 'idle' | 'loading' | 'error'; msg?: string; warn?: string }
+  demStatus: DemStatus
   contourInterval: number
-  indexInterval: number
+  indexEvery: number
+  showDataGrid: boolean
+  /** La malla del dato está dibujada (false si se pidió pero es demasiado densa). */
+  dataGridShown: boolean
   lot: XY[]
+  /** Algún vértice del lote queda fuera del área de terreno. */
+  lotOutside: boolean
   draft: XY[]
   mode: MapMode
   profile: PerfilNormativo
@@ -34,11 +60,9 @@ interface State {
 }
 
 interface Setters {
-  setAreaSize(v: number): void
-  setCell(v: number): void
-  setDemSource(v: DemSourceId): void
   setContourInterval(v: number): void
-  setIndexInterval(v: number): void
+  setIndexEvery(v: number): void
+  setShowDataGrid(v: boolean): void
   setMode(v: MapMode): void
   setMaxHeight(v: number): void
   setDidactic(v: boolean): void
@@ -49,16 +73,19 @@ interface Setters {
 
 interface Actions {
   setSite(p: LonLat): void
-  loadTerrain(): Promise<void>
+  startArea(): void
+  cancelDraw(): void
+  setDemSource(src: DemSourceId): void
+  retry(): void
   startLot(): void
   finishLot(): void
-  cancelLot(): void
   exampleLot(): void
   clearLot(): void
   setProfile(id: 'oguc' | 'personalizado'): void
   setRole(k: number, r: EdgeRole): void
   setRule(k: number, patch: Partial<EdgeSetting['rule']>): void
   applyToAll(k: number): void
+  exportContoursDxf(): void
   exportDxf(): void
   exportPng(): void
   saveScene(): void
@@ -100,6 +127,44 @@ function Num({ value, onChange, step = 0.5, min, label }: { value: number; onCha
         if (!Number.isNaN(v)) onChange(v)
       }}
     />
+  )
+}
+
+const fmtEscala = (den: number) => `1:${den.toLocaleString('es-CL')}`
+
+/**
+ * Indicador de escala confiable: dónde cae el dato en la gama de escalas, de 1:200 (detalle de arquitectura) a
+ * 1:250.000. A la izquierda de la marca, más detalle del que el dato tiene (precisión aparente).
+ */
+function EscalaDato({ resolucion }: { resolucion: number }) {
+  const { denominador, equidistanciaMinima } = escalaConfiable(resolucion)
+  const lo = Math.log10(200)
+  const hi = Math.log10(250_000)
+  const pos = (den: number) => Math.min(100, Math.max(0, ((Math.log10(den) - lo) / (hi - lo)) * 100))
+  const p = pos(denominador)
+  return (
+    <div className="rounded-md border border-slate-200 p-2 text-xs" data-testid="escala-dato">
+      <div className="flex items-baseline justify-between">
+        <span className="text-slate-600">Escala confiable del dato</span>
+        <b className="text-sm" data-testid="escala-valor">{fmtEscala(denominador)}</b>
+      </div>
+      <div className="relative mt-1.5 h-2 overflow-hidden rounded" aria-hidden>
+        <div className="absolute inset-y-0 left-0 bg-amber-300" style={{ width: `${p}%` }} title="Más detalle que el dato: precisión aparente" />
+        <div className="absolute inset-y-0 right-0 bg-emerald-500" style={{ left: `${p}%` }} title="Escalas que el dato sostiene" />
+      </div>
+      <div className="relative h-3.5 text-[10px] text-slate-400" aria-hidden>
+        {[500, 5_000, 50_000].map((d) => (
+          <span key={d} className="absolute -translate-x-1/2" style={{ left: `${pos(d)}%` }}>{fmtEscala(d)}</span>
+        ))}
+      </div>
+      <p className="mt-0.5 leading-snug text-slate-600">
+        Dato de ~{fmtNum(resolucion)} m: no sostiene más detalle que {fmtEscala(denominador)}.
+        {denominador > 500 && <> Un plano de sitio a 1:500 pediría un dato de ~0,25 m (levantamiento).</>}
+      </p>
+      <p className="leading-snug text-slate-600">
+        Equidistancia mínima sugerida: <b data-testid="equidistancia-sugerida">{fmtNum(equidistanciaMinima)} m</b>.
+      </p>
+    </div>
   )
 }
 
@@ -186,7 +251,11 @@ export function Panel({ s, set, act }: { s: State; set: Setters; act: Actions })
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([g, c]) => ({ g, pct: (100 * c) / tot }))
   }, [s.envelope])
 
-  const coarseWarning = s.dem && s.dem.meta.nominalResolutionM >= 10 && s.contourInterval < 2
+  const res = s.dem?.meta.nominalResolutionM
+  const eqMin = res !== undefined ? escalaConfiable(res).equidistanciaMinima : undefined
+  const coarseWarning = eqMin !== undefined && s.contourInterval < eqMin
+  const tooMany = (e: number) => !!st && contarNiveles(st.min, st.max, e) > MAX_NIVELES
+  const sourceInfo = DEM_SOURCES.find((d) => d.id === s.demSource)
 
   return (
     <aside className="w-full shrink-0 overflow-y-auto border-r border-slate-200 bg-white md:w-[380px]" data-testid="panel">
@@ -203,44 +272,49 @@ export function Panel({ s, set, act }: { s: State; set: Setters; act: Actions })
         </div>
       </Section>
 
-      <Section n={2} title="Terreno y curvas de nivel" done={!!s.dem}>
-        <label className="block text-xs text-slate-600">Fuente de elevación</label>
-        <select className={input} value={s.demSource} onChange={(e) => set.setDemSource(e.target.value as DemSourceId)} aria-label="Fuente de elevación">
-          {DEM_SOURCES.map((d) => (
-            <option key={d.id} value={d.id}>{d.label}</option>
-          ))}
-        </select>
-        <p className="text-xs text-slate-500">{DEM_SOURCES.find((d) => d.id === s.demSource)?.hint}</p>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="text-xs text-slate-600">
-            Área (m)
-            <select className={input} value={s.areaSize} onChange={(e) => set.setAreaSize(+e.target.value)}>
-              {[100, 200, 300, 500].map((v) => <option key={v} value={v}>{v} × {v}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-slate-600">
-            Celda (m)
-            <select className={input} value={s.cell} onChange={(e) => set.setCell(+e.target.value)}>
-              {[1, 2, 5].map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </label>
-        </div>
-        <button className={btnPrimary} onClick={act.loadTerrain} disabled={s.demStatus.state === 'loading'}>
-          {s.demStatus.state === 'loading' ? 'Cargando…' : s.dem ? 'Recargar terreno' : 'Cargar terreno'}
-        </button>
-        {s.demStatus.state === 'error' && <Note tone="error">{s.demStatus.msg}</Note>}
-        {s.demStatus.state === 'idle' && s.demStatus.msg && <Note>{s.demStatus.msg}</Note>}
+      <Section n={2} title="Área y curvas de nivel" done={!!s.dem}>
+        {s.mode === 'area' ? (
+          <div className="flex items-center gap-2">
+            <button className={btn} onClick={act.cancelDraw}>Cancelar</button>
+            <span className="text-xs text-slate-500">{s.areaCorner ? 'Clic en la esquina opuesta del área.' : 'Clic en una esquina del área.'}</span>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={s.area ? btn : btnPrimary} onClick={act.startArea}>
+              {s.area ? 'Redibujar área' : 'Dibujar área en el mapa'}
+            </button>
+            {!s.area && <span className="text-xs text-slate-500">Dos clics en esquinas opuestas. El terreno se descarga solo.</span>}
+          </div>
+        )}
+        {s.area && s.cell !== null && (
+          <p className="text-xs text-slate-600" data-testid="area-info">
+            {fmtAreaSize(rectSize(s.area).w, rectSize(s.area).h)} · celda {fmtNum(s.cell)} m (
+            {gridCells(s.area, s.cell).nx} × {gridCells(s.area, s.cell).ny})
+          </p>
+        )}
+        {s.demStatus.state === 'loading' && (
+          <p className="text-xs text-slate-600" data-testid="dem-cargando">
+            {s.demSource === 'sintetico' ? 'Generando la ladera sintética…' : 'Descargando el terreno…'}
+          </p>
+        )}
+        {s.demStatus.state === 'error' && (
+          <Note tone="error">
+            {s.demStatus.msg}{' '}
+            <button className="underline" onClick={act.retry}>Reintentar</button>
+          </Note>
+        )}
         {s.demStatus.state === 'idle' && s.demStatus.warn && (
           <div data-testid="dem-aviso">
             <Note tone="warn">{s.demStatus.warn}</Note>
           </div>
         )}
-        {s.dem && st && (
+        {s.dem && st && res !== undefined && eqMin !== undefined && (
           <>
             <div className="rounded-md bg-slate-50 p-2 text-xs" data-testid="dem-info">
-              <div><b>{s.dem.meta.source}</b> · tipo {s.dem.meta.kind} · dato ~{s.dem.meta.nominalResolutionM} m (grilla {s.dem.cell} m)</div>
+              <div><b>{s.dem.meta.source}</b> · tipo {s.dem.meta.kind} · dato ~{fmtNum(res)} m (grilla {fmtNum(s.dem.cell)} m)</div>
               <div>Cotas {fmt(st.min)} – {fmt(st.max)} m · desnivel {fmt(st.max - st.min)} m</div>
             </div>
+            <EscalaDato resolucion={res} />
             {s.dem.meta.kind === 'DSM' && (
               <Note tone="warn">
                 Modelo de <b>superficie</b>: incluye copas de árboles y techos. En sitios con bosque la cota «natural» puede quedar
@@ -249,26 +323,60 @@ export function Panel({ s, set, act }: { s: State; set: Setters; act: Actions })
             )}
             <div className="grid grid-cols-2 gap-2">
               <label className="text-xs text-slate-600">
-                Equidistancia (m)
+                Equidistancia
                 <select className={input} value={s.contourInterval} onChange={(e) => set.setContourInterval(+e.target.value)} aria-label="Equidistancia">
-                  {[0.5, 1, 2, 5, 10].map((v) => <option key={v} value={v}>{v}</option>)}
+                  {opcionesEquidistancia(eqMin).map((v) => (
+                    <option key={v} value={v} disabled={tooMany(v)}>
+                      {fmtNum(v)} m{v === eqMin ? ' · sugerida' : v < eqMin ? ' · aparente' : ''}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="text-xs text-slate-600">
-                Maestras cada (m)
-                <select className={input} value={s.indexInterval} onChange={(e) => set.setIndexInterval(+e.target.value)}>
-                  {[5, 10, 25, 50].map((v) => <option key={v} value={v}>{v}</option>)}
+                Maestras cada
+                <select className={input} value={s.indexEvery} onChange={(e) => set.setIndexEvery(+e.target.value)} aria-label="Maestras cada">
+                  {INDEX_EVERY_OPTIONS.map((k) => (
+                    <option key={k} value={k}>{fmtNum(s.contourInterval * k)} m (1 de {k})</option>
+                  ))}
                 </select>
               </label>
             </div>
             {coarseWarning && (
               <Note tone="warn">
-                Curvas cada {s.contourInterval} m sobre un dato de ~{s.dem.meta.nominalResolutionM} m: la precisión es <b>aparente</b>.
+                Curvas cada {fmtNum(s.contourInterval)} m sobre un dato de ~{fmtNum(res)} m: la precisión es <b>aparente</b>.
                 La forma general es válida; el detalle, no.
               </Note>
             )}
+            {tooMany(s.contourInterval) && (
+              <Note tone="warn">Con esta equidistancia saldrían más de {MAX_NIVELES} curvas: elige una mayor.</Note>
+            )}
+            <label className="flex items-center gap-1.5 text-xs text-slate-600">
+              <input type="checkbox" checked={s.showDataGrid} onChange={(e) => set.setShowDataGrid(e.target.checked)} />
+              Mostrar la malla del dato en el mapa (celdas de ~{fmtNum(res)} m)
+            </label>
+            {s.showDataGrid && !s.dataGridShown && (
+              <p className="text-xs text-slate-500">La malla es demasiado densa para dibujarla en esta área.</p>
+            )}
+            <button className={btn} onClick={act.exportContoursDxf}>Exportar curvas DXF (UTM)</button>
           </>
         )}
+        <details className="rounded-md border border-slate-200 px-2 py-1 text-xs" data-testid="opciones-avanzadas">
+          <summary className="cursor-pointer text-slate-600">Opciones avanzadas</summary>
+          <label className="mt-1.5 block text-slate-600">
+            Fuente de elevación
+            <select className={input} value={s.demSource} onChange={(e) => act.setDemSource(e.target.value as DemSourceId)} aria-label="Fuente de elevación">
+              {DEM_SOURCES.map((d) => (
+                <option key={d.id} value={d.id} disabled={!!d.disabled}>
+                  {d.label}{d.disabled ? ` — ${d.disabled}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="mt-1 text-slate-500">{sourceInfo?.hint}</p>
+          <p className="mt-1 text-slate-500">
+            Copernicus GLO-30 queda deshabilitado: su servidor no permite la lectura desde el navegador y hace falta un proxy.
+          </p>
+        </details>
       </Section>
 
       <Section n={3} title="Lote" done={s.lot.length > 2}>
@@ -278,7 +386,7 @@ export function Panel({ s, set, act }: { s: State; set: Setters; act: Actions })
           ) : (
             <>
               <button className={btnPrimary} onClick={act.finishLot} disabled={s.draft.length < 3}>Cerrar lote ({s.draft.length})</button>
-              <button className={btn} onClick={act.cancelLot}>Cancelar</button>
+              <button className={btn} onClick={act.cancelDraw}>Cancelar</button>
             </>
           )}
           <button className={btn} onClick={act.exampleLot}>Lote de ejemplo</button>
@@ -288,6 +396,9 @@ export function Panel({ s, set, act }: { s: State; set: Setters; act: Actions })
           <p className="text-xs text-slate-600" data-testid="lot-info">
             {lotInfo.sides.length} lados · superficie {fmt(lotInfo.area)} m² · perímetro {fmt(lotInfo.perim)} m
           </p>
+        )}
+        {s.lotOutside && (
+          <Note tone="warn">Parte del lote queda fuera del área de terreno: ahí no hay cotas. Redibuja el área para cubrirlo.</Note>
         )}
       </Section>
 
@@ -339,7 +450,7 @@ export function Panel({ s, set, act }: { s: State; set: Setters; act: Actions })
 
       <Section n={5} title="Resultados" done={!!s.envelope}>
         {!s.envelope ? (
-          <p className="text-xs text-slate-500">Carga el terreno y define el lote para calcular la envolvente.</p>
+          <p className="text-xs text-slate-500">Dibuja el área (paso 2) y define el lote para calcular la envolvente.</p>
         ) : (
           <>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs" data-testid="results">

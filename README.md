@@ -2,7 +2,10 @@
 
 Envolvente normativa sobre terreno real — herramienta docente de META|Lab, Universidad Autónoma de Chile.
 
-Sitio real (cualquier parte del mundo) → terreno → curvas de nivel → lote → norma → envolvente 3D → DXF georreferenciado.
+Sitio real (cualquier parte del mundo) → área → curvas de nivel → lote → norma → envolvente 3D → DXF georreferenciado.
+
+Curvas de nivel en tres pasos: ubica el sitio, dibuja el área en el mapa (dos clics) y las curvas aparecen. El terreno
+se descarga solo; el panel indica la escala que el dato sostiene y preselecciona la equidistancia mínima sugerida.
 
 ## Uso local
 
@@ -11,7 +14,8 @@ npm install
 npm run dev
 ```
 
-Abre la URL que indica la consola. Para clases sin conexión, elige **Ladera sintética** como fuente de elevación.
+Abre la URL que indica la consola. Para clases sin conexión, elige **Ladera sintética** en «Opciones avanzadas» del
+paso 2 y dibuja el área.
 
 ## Pruebas
 

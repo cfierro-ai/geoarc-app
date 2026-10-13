@@ -7,6 +7,10 @@ export interface Isoline {
   closed: boolean
 }
 
+/** ¿La cota es de curva maestra (múltiplo de `indexInterval`)? */
+export const isIndexLevel = (level: number, indexInterval: number) =>
+  Math.abs(level / indexInterval - Math.round(level / indexInterval)) < 1e-6
+
 /** Niveles múltiplos de `interval` dentro de [min, max]. */
 export function contourLevels(min: number, max: number, interval: number): number[] {
   if (!(interval > 0) || !Number.isFinite(min) || !Number.isFinite(max)) return []

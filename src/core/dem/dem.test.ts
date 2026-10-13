@@ -1,8 +1,9 @@
-import { createGrid, sampleBilinear, gridStats } from './grid'
-import { decodeTerrarium, lonLatToTile } from './terrarium'
+import { createGrid, rectGrid, sampleBilinear, gridStats } from './grid'
+import { decodeTerrarium, lonLatToTile, terrariumPixelSize, terrariumZoom } from './terrarium'
 import { copernicusTileName } from './copernicus'
 import { rasterSampler } from './resample'
 import { syntheticHillside } from './synthetic'
+import { squareRect } from './area'
 
 const meta = { source: 't', kind: 'sintético' as const, nominalResolutionM: 1 }
 
@@ -15,10 +16,22 @@ describe('grilla de elevación', () => {
     expect(gridStats(g)).toEqual({ min: 10, max: 60 })
   })
 
-  it('la ladera sintética es determinista y desciende al norte', () => {
-    const g = syntheticHillside(200, 2)
+  it('grilla sobre un rectángulo: celdas = lado / celda, centrada en el área', () => {
+    const g = rectGrid({ minX: 0, minY: 0, maxX: 10, maxY: 6 }, 2, meta, () => 0)
+    expect([g.nx, g.ny, g.x0, g.y0]).toEqual([6, 4, 0, 0]) // 5 × 3 celdas
+    // 5 m / 2 m = 2,5 celdas → 3 celdas, centradas: de −0,5 a 5,5
+    const h = rectGrid({ minX: 0, minY: 0, maxX: 10, maxY: 5 }, 2, meta, () => 0)
+    expect([h.ny, h.y0]).toEqual([4, -0.5])
+  })
+
+  it('la ladera sintética es determinista, desciende al norte y no depende del área', () => {
+    const g = syntheticHillside(squareRect(200), 2)
     expect(sampleBilinear(g, -60, -80)).toBeGreaterThan(sampleBilinear(g, -60, 80))
-    expect(syntheticHillside(200, 2).z).toEqual(g.z)
+    expect(syntheticHillside(squareRect(200), 2).z).toEqual(g.z)
+    // otra área que comparte nodos con la primera da la misma cota en ellos
+    const otra = syntheticHillside({ minX: -20, minY: -20, maxX: 60, maxY: 40 }, 2)
+    expect(sampleBilinear(otra, 10, 10)).toBeCloseTo(sampleBilinear(g, 10, 10), 4)
+    expect(otra.meta.nominalResolutionM).toBe(2)
   })
 })
 
@@ -31,6 +44,17 @@ describe('fuentes DEM', () => {
     const t = lonLatToTile({ lon: 0, lat: 0 }, 0)
     expect(t.x).toBeCloseTo(0.5)
     expect(t.y).toBeCloseTo(0.5)
+  })
+  it('Terrarium: zoom más bajo cuyo píxel no supera la celda (tope z14)', () => {
+    // ecuador: píxel z14 = 40 075 016,686 / (256 · 2^14) = 9,5546 m
+    expect(terrariumPixelSize(14, 0)).toBeCloseTo(9.5546, 4)
+    expect(terrariumZoom(10, 0)).toBe(14) // z13 = 19,1 m > 10
+    expect(terrariumZoom(2, 0)).toBe(14) // nunca más fino que z14
+    // Temuco (38,74° S): píxel z12 ≈ 29,8 m, z11 ≈ 59,6 m, z10 ≈ 119 m
+    const lat = -38.739
+    expect(terrariumZoom(20, lat)).toBe(13)
+    expect(terrariumZoom(30, lat)).toBe(12)
+    expect(terrariumZoom(80, lat)).toBe(11)
   })
   it('nombra teselas Copernicus por su esquina suroeste', () => {
     expect(copernicusTileName({ lon: -72.598, lat: -38.739 })).toBe('Copernicus_DSM_COG_10_S39_00_W073_00_DEM')
