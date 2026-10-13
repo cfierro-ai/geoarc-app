@@ -270,3 +270,62 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
 - Los estudiantes de Taller III hacen maqueta de terreno → en el PR #5 se agregan dos descargas: Maqueta
   (corte láser) y Malla 3D (OBJ).
 - Plan: PR #4 `v0.2-simplificar` → PR #5 `v0.2-maqueta`.
+
+## 2026-10-13 · PR #4 `v0.2-simplificar`: implementación
+
+### Importador
+- Etiqueta `archivo/importador-dxf` en `cbe6dad` (último commit de `v0.2-levantamiento`), publicada en origin.
+- En main no había lector DXF, TIN ni delaunator. Quedaban la opción «Levantamiento importado» (deshabilitada) y el
+  tipo de dato `'levantamiento'` con su rama en `escala.ts` (equidistancia mínima 0,5 m y su texto): ninguna fuente lo
+  produce, así que se eliminó. El criterio de Chris queda en ≥ 20 m → 5 m; 5–20 m → 2 m; < 5 m → 1 m. 0,5 m sigue en el
+  selector (marcada «aparente» con los datos actuales).
+
+### Área como polígono
+- «Dibujar polígono» (clics + doble clic, o «Cerrar polígono»; Esc cancela) junto a «Dibujar rectángulo».
+- Terreno y curvas se calculan sobre el rectángulo envolvente; las curvas y la malla del dato se recortan al polígono
+  (`core/contours/clip.ts`: cada tramo se parte en los cruces con los lados y se conserva lo que queda dentro; sirve
+  para polígonos cóncavos). Una curva cerrada que cruza el borde queda abierta y en una pieza (se une por la costura).
+- No se cierra un polígono de menos de 3 vértices, sin superficie o cuyo rectángulo envolvente no cumple los límites
+  de tamaño del área; el panel dice por qué.
+- Las estadísticas (desnivel, preselección de equidistancia) siguen siendo las del rectángulo envolvente.
+- El Estudio de sombras, si usa ese terreno, muestra el polígono y recorta sus curvas igual.
+
+### Contexto (spike y decisión)
+- Spike con datos reales (Temuco, teselas z14 de OpenFreeMap, `planet/20261011_080001_pt`):
+  - `transportation`: todas las entidades traen id (id OSM); 85 de 1 067 ids aparecen en más de una tesela → una vía
+    partida se puede unir por id.
+  - `building`: **fusionado por altura**. Una tesela del centro trae 13 entidades con 804 anillos (una sola, de 5 m,
+    reúne 760). El id no identifica un edificio y no sirve para unir pedazos.
+  - Overpass (`overpass-api.de`) desde el navegador: 200 con CORS en 1,8 s; 34 edificios (11 con `building:levels`,
+    ninguno con `height`) y 95 vías en ~300 m. Espejos probados: `overpass.private.coffee` sin respuesta en 20 s,
+    `maps.mail.ru` 504. Desde Node sin User-Agent de navegador, Overpass responde 406.
+- **Decisión:** Overpass es la fuente principal; las teselas, el respaldo (vías unidas por id; edificios como polígonos
+  con `render_height`, recortados al borde de su tesela: un edificio que cruza el borde queda en dos piezas). El panel
+  avisa cuando se usó el respaldo.
+- Bbox = área + 50 m. Sobre 3 km por lado no se descarga (miles de entidades). Se descarga solo al definir un área;
+  cambiar de fuente de elevación no lo vuelve a pedir. Si falla, el terreno igual carga y el panel ofrece «Reintentar».
+- Altura: `height` (m); si no, `building:levels` × 3 m; sin dato, un piso (3 m). Se muestra el reparto en el panel.
+  En el respaldo, `render_height` de OpenMapTiles (que usa otro criterio: 3,66 m por piso y 5 m sin dato).
+- Vías: todo `highway` salvo `proposed`, `razed` y `abandoned`.
+- `.geoarc` v4 guarda el contexto en lon/lat con 7 decimales (~1 cm); al abrir la escena no se vuelve a pedir.
+
+### DXF del contexto
+- EDIFICACIONES: huella (y patios) como polilínea 2D cerrada a la cota más baja del terreno bajo la huella, con la
+  altura como **espesor** (código 39): en AutoCAD se ve como volumen. VIALIDAD: ejes como polilíneas 3D con la cota del
+  terreno en cada vértice. Fuera de la grilla (el contexto llega 50 m más allá) se usa la cota del borde más cercano.
+- TEXT «© OpenStreetMap contributors (ODbL)» bajo el área, en una capa propia, **ATRIBUCION**, para que no se pierda al
+  apagar las otras dos.
+- R12 no declara la codificación del texto: «©» va como `\U+00A9` (escape de AutoCAD) y el archivo queda en ASCII.
+  ezdxf 1.4.4: lectura y auditoría con 0 errores y 0 arreglos; `has_dxf_unicode` lo reconoce y `decode_dxf_unicode`
+  da «©». **Falta abrirlo en AutoCAD LT / Revit** (sigue pendiente desde v0.2).
+
+### Estudio de sombras
+- Edificaciones del contexto extruidas en la vista 3D (con sombra), desde la cota más baja del terreno bajo la huella;
+  solo las que caen dentro del terreno del estudio (en plano: el lote + 30 m). Casilla «Edificaciones del contexto».
+- **Altura máxima alcanzable refinada bajo la celda:** desde la mejor celda, búsqueda en 8 direcciones con paso de
+  media celda que se divide por 2 hasta 1 mm (`refineMax`). Caso dorado: 20 × 20 a 70° → 27,47 m en el panel (antes
+  27,1 m, la celda más central). El panel muestra 2 decimales.
+
+### Navegación de Curvas
+- Pasos: 1 Sitio · 2 Área y curvas · 3 Contexto · 4 Descargar («Descargar DXF (UTM)»). El PR #5 agrega ahí «Maqueta»
+  y «Malla 3D».
