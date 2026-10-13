@@ -1,22 +1,70 @@
-import { contarNiveles, cotaLabel, escalaConfiable, opcionesEquidistancia } from './escala'
+import { rectGrid, gridStats } from '../dem/grid'
+import { contourLevels, isolines } from './isolines'
+import {
+  contarNiveles,
+  cotaLabel,
+  curvasPorDesnivel,
+  equidistanciaMinimaConfiable,
+  preseleccionEquidistancia,
+  usoDelDato,
+} from './escala'
 import { labelHeight, labelPlacements } from './labels'
 
-describe('escala confiable del dato (Tobler: 1:2 000 × resolución)', () => {
-  it('casos dorados', () => {
-    expect(escalaConfiable(30)).toEqual({ denominador: 60_000, equidistanciaMinima: 25 }) // 60 000 / 2 500 = 24 → 25
-    expect(escalaConfiable(60)).toEqual({ denominador: 120_000, equidistanciaMinima: 50 }) // 48 → 50
-    expect(escalaConfiable(12.5)).toEqual({ denominador: 25_000, equidistanciaMinima: 10 })
-    expect(escalaConfiable(5)).toEqual({ denominador: 10_000, equidistanciaMinima: 5 }) // 4 → 5
-    expect(escalaConfiable(1)).toEqual({ denominador: 2_000, equidistanciaMinima: 1 }) // 0,8 → 1
-    expect(escalaConfiable(0.5)).toEqual({ denominador: 1_000, equidistanciaMinima: 0.5 }) // 0,4 → 0,5
-    expect(escalaConfiable(1.23)).toEqual({ denominador: 2_500, equidistanciaMinima: 1 }) // 2 460 → 2 500 (2 cifras)
+const TERRARIUM = { kind: 'DSM' as const, nominalResolutionM: 30 }
+const dato = (r: number) => ({ kind: 'DSM' as const, nominalResolutionM: r })
+const LEV = { kind: 'levantamiento' as const, nominalResolutionM: 0.5 }
+
+describe('equidistancia mínima confiable según la resolución del dato', () => {
+  it('≥ 20 m → 5 m; 5–20 m → 2 m; < 5 m → 1 m; levantamiento → 0,5 m', () => {
+    expect(equidistanciaMinimaConfiable(TERRARIUM)).toBe(5)
+    expect(equidistanciaMinimaConfiable(dato(20))).toBe(5)
+    expect(equidistanciaMinimaConfiable(dato(19.9))).toBe(2)
+    expect(equidistanciaMinimaConfiable(dato(5))).toBe(2)
+    expect(equidistanciaMinimaConfiable(dato(4.9))).toBe(1)
+    expect(equidistanciaMinimaConfiable(LEV)).toBe(0.5)
+  })
+})
+
+describe('preselección: la menor ≥ mínima confiable que dé entre 5 y 20 curvas', () => {
+  it('caso de control: área de 5 ha con 25 m de desnivel sobre Terrarium → 5 m, 5 curvas', () => {
+    // 250 × 200 m = 5 ha; plano que sube 25 m hacia el norte, de 100,3 a 125,3 m
+    const g = rectGrid({ minX: 0, minY: 0, maxX: 250, maxY: 200 }, 2, { source: 'Terrarium', ...TERRARIUM }, (_x, y) => 100.3 + (25 * y) / 200)
+    const { min, max } = gridStats(g)
+    expect(max - min).toBeCloseTo(25, 4)
+    expect(preseleccionEquidistancia(g.meta, max - min)).toEqual({ equidistancia: 5, curvas: 5 })
+    expect(isolines(g, contourLevels(min, max, 5))).toHaveLength(5) // 105, 110, 115, 120, 125
   })
 
-  it('el selector incluye la mínima sugerida aunque no esté en la lista base', () => {
-    expect(opcionesEquidistancia(25)).toEqual([0.25, 0.5, 1, 2, 5, 10, 20, 25, 50, 100])
-    expect(opcionesEquidistancia(0.2)[0]).toBe(0.2)
+  it('casos dorados por desnivel', () => {
+    expect(preseleccionEquidistancia(TERRARIUM, 300)).toEqual({ equidistancia: 20, curvas: 15 }) // 5 → 60, 10 → 30
+    expect(preseleccionEquidistancia(dato(10), 14)).toEqual({ equidistancia: 2, curvas: 7 })
+    expect(preseleccionEquidistancia(dato(1), 14.2)).toEqual({ equidistancia: 1, curvas: 14 })
+    expect(preseleccionEquidistancia(LEV, 4)).toEqual({ equidistancia: 0.5, curvas: 8 })
+    expect(preseleccionEquidistancia(LEV, 30)).toEqual({ equidistancia: 2, curvas: 15 }) // 0,5 → 60, 1 → 30
   })
 
+  it('sin candidata en 5–20: casi plano → la mínima confiable; desnivel enorme → la mayor', () => {
+    expect(preseleccionEquidistancia(TERRARIUM, 3)).toEqual({ equidistancia: 5, curvas: 0 })
+    expect(preseleccionEquidistancia(TERRARIUM, 2000)).toEqual({ equidistancia: 50, curvas: 40 })
+  })
+
+  it('curvas según el desnivel', () => {
+    expect(curvasPorDesnivel(25, 5)).toBe(5)
+    expect(curvasPorDesnivel(24.9, 5)).toBe(4)
+  })
+})
+
+describe('uso del dato (etiqueta informativa)', () => {
+  it('textos por tipo y resolución', () => {
+    expect(usoDelDato(TERRARIUM)).toBe('dato de ~30 m: útil para ladera y barrio, no para el lote')
+    expect(usoDelDato(dato(10))).toMatch(/^dato de ~10 m: útil para barrio y manzana/)
+    expect(usoDelDato(dato(2))).toBe('dato de ~2 m: útil para manzana y lote')
+    expect(usoDelDato(LEV)).toMatch(/^levantamiento topográfico/)
+    expect(usoDelDato({ kind: 'sintético', nominalResolutionM: 0.4 })).toMatch(/^terreno inventado \(~0,4 m\)/)
+  })
+})
+
+describe('niveles y rótulos', () => {
   it('cuenta curvas como contourLevels', () => {
     expect(contarNiveles(101.3, 104.9, 1)).toBe(3) // 102, 103, 104
     expect(contarNiveles(0, 1, 0.5)).toBe(3)

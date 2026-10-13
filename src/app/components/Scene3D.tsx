@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
@@ -246,21 +246,34 @@ export function Scene3D(p: Props) {
   const { min } = useMemo(() => gridStats(p.dem), [p.dem])
   const zRef = min
   const ex = p.exaggeration
+  /**
+   * Altura de la envolvente con que se encuadra la cámara. Se fija al cambiar el lote o el terreno; al editar la norma
+   * solo se reencuadra si la envolvente crece y quedaría cortada (no en cada cambio, que reiniciaría la órbita).
+   */
+  const maxRel = p.envelope?.stats.maxRel ?? 0
+  const [fit, setFit] = useState({ lot: p.lot, dem: p.dem, h: maxRel })
+  let fitHeight = fit.h
+  // estado ajustado durante el render (patrón de React para «valor según lo anterior»), sin efecto ni render extra
+  if (fit.lot !== p.lot || fit.dem !== p.dem || maxRel > fit.h * 1.2 + 1) {
+    fitHeight = maxRel
+    setFit({ lot: p.lot, dem: p.dem, h: maxRel })
+  }
   const target = useMemo(() => {
     // sin lote, la cámara mira al centro del terreno (el área puede no contener el sitio)
     const c = p.lot.length
       ? { x: p.lot.reduce((s, q) => s + q.x, 0) / p.lot.length, y: p.lot.reduce((s, q) => s + q.y, 0) / p.lot.length }
       : { x: p.dem.x0 + ((p.dem.nx - 1) * p.dem.cell) / 2, y: p.dem.y0 + ((p.dem.ny - 1) * p.dem.cell) / 2 }
     const z = sampleBilinear(p.dem, c.x, c.y)
-    return new THREE.Vector3(c.x, ((Number.isNaN(z) ? zRef : z) - zRef) * ex, -c.y)
-  }, [p.lot, p.dem, zRef, ex])
+    // con envolvente, mirar a un tercio de su altura para que entre completa
+    return new THREE.Vector3(c.x, ((Number.isNaN(z) ? zRef : z) - zRef + fitHeight * 0.35) * ex, -c.y)
+  }, [p.lot, p.dem, fitHeight, zRef, ex])
   const radius = useMemo(() => {
     if (!p.lot.length) return (Math.max(p.dem.nx, p.dem.ny) * p.dem.cell) / 1.6
     const xs = p.lot.map((q) => q.x)
     const ys = p.lot.map((q) => q.y)
     const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys))
-    return Math.max(25, span * 1.4)
-  }, [p.lot, p.dem])
+    return Math.max(25, span * 1.4, fitHeight * ex * 1.5)
+  }, [p.lot, p.dem, fitHeight, ex])
 
   return (
     <div className="absolute inset-0 bg-gradient-to-b from-slate-200 to-slate-50" data-testid="scene3d">

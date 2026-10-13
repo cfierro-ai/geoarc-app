@@ -84,9 +84,9 @@ describe('DXF R12', () => {
     expect(ents[k + 5].type).toBe('SEQEND')
   })
 
-  it('con lote agrega LOTE', () => {
+  it('estudio en plano (sin terreno): solo LOTE, sin capas de curvas', () => {
     const frame = createLocalFrame({ lon: -72.598, lat: -38.739 })
     const s = sceneToDxf({ frame, indexInterval: 5, contours: [], lot: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] })
-    expect(parseDxf(s).layers).toContain('LOTE')
+    expect(parseDxf(s).layers).toEqual(['LOTE'])
   })
 })
