@@ -63,6 +63,10 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   await expect(page.getByTestId('map')).toHaveAttribute('data-idle', 'true', { timeout: 30_000 })
   await page.screenshot({ path: 'e2e/capturas/09-curvas-terrarium.png' })
 
+  // sin edificaciones ni vías en el área, la descarga no las promete
+  await expect(page.getByTestId('contexto-info')).toContainText('0 edificaciones · 0 vías')
+  await expect(page.getByTestId('descarga-contenido')).toHaveText(/^Curvas con cota y área\. Coordenadas UTM 18S/)
+
   // DXF: maestras cada 25 m (1 de 5) → la curva de 200 m, la del sitio, es maestra y lleva su cota
   const [descarga] = await Promise.all([
     page.waitForEvent('download'),

@@ -25,6 +25,12 @@ import { download, useEscape } from '../../app/util'
 import { fmt, fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, type MapMode } from '../../app/model'
 import { actions, useAppState } from '../../app/store'
 
+/** Qué lleva el DXF, en una frase: «Curvas con cota, área, edificaciones (con su altura) y vías». */
+function contenidoDxf(edificaciones: boolean, vias: boolean): string {
+  const partes = ['Curvas con cota', 'área', ...(edificaciones ? ['edificaciones (con su altura)'] : []), ...(vias ? ['vías'] : [])]
+  return `${partes.slice(0, -1).join(', ')} y ${partes[partes.length - 1]}`
+}
+
 /**
  * Módulo Curvas de nivel. Flujo: ubicar el sitio → dibujar el área → curvas y contexto (edificaciones y vías de OSM)
  * aparecen solos → descargar.
@@ -228,7 +234,7 @@ export function CurvasModule() {
           <Section n={4} title="Descargar" done={false}>
             <button className={btnPrimary} onClick={exportDxf}>Descargar DXF (UTM)</button>
             <p className="text-xs text-slate-500" data-testid="descarga-contenido">
-              Curvas con cota, área{ctxDatos ? ', edificaciones (con su altura) y vías' : ''}. Coordenadas UTM {frame.zone}
+              {contenidoDxf(!!ctxDatos?.edificaciones.length, !!ctxDatos?.vias.length)}. Coordenadas UTM {frame.zone}
               {frame.south ? 'S' : 'N'} (EPSG:{frame.epsg}), en metros.
             </p>
           </Section>
