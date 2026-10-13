@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { createLocalFrame, type LonLat, type XY } from '../../core/geo/local'
-import { gridStats } from '../../core/dem/grid'
+import { gridStats, sampleClamped } from '../../core/dem/grid'
 import { areaProblem, autoCell, dataGridLines, gridCells, polygonProblem, rectFromCorners, rectSize } from '../../core/dem/area'
 import { clipIsolines, clipPolyline } from '../../core/contours/clip'
 import { area as polygonArea, cleanRing } from '../../core/envelope/polygon'
@@ -19,13 +19,15 @@ import { MapView } from '../../app/components/MapView'
 import { Scene3D } from '../../app/components/Scene3D'
 import { SiteSection } from '../../app/components/SiteSection'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
+import { ContextoPanel } from '../../app/components/ContextoInfo'
 import { btn, btnPrimary, input, ModulePanel, Note, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
 import { fmt, fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, type MapMode } from '../../app/model'
 import { actions, useAppState } from '../../app/store'
 
 /**
- * Módulo Curvas de nivel. Flujo del profesor: ubicar el sitio → dibujar el área → las curvas aparecen.
+ * Módulo Curvas de nivel. Flujo: ubicar el sitio → dibujar el área → curvas y contexto (edificaciones y vías de OSM)
+ * aparecen solos → descargar.
  * El área es un rectángulo (dos esquinas) o un polígono (clics + doble clic). Con polígono, el terreno se calcula sobre
  * su rectángulo envolvente y las curvas (y la malla del dato) se recortan al polígono.
  * El terreno se descarga solo al cerrar el área; la fuente queda en «Opciones avanzadas».
@@ -34,6 +36,9 @@ export function CurvasModule() {
   const site = useAppState((s) => s.site)
   const terrain = useAppState((s) => s.terrain)
   const curvas = useAppState((s) => s.curvas)
+  const contexto = useAppState((s) => s.contexto)
+  const capas = useAppState((s) => s.capas)
+  const ctxDatos = contexto.estado === 'listo' ? contexto.datos : null
   const [mode, setMode] = useState<MapMode>('none')
   const [areaCorner, setAreaCorner] = useState<XY | null>(null)
   /** Vértices del polígono en dibujo y, si al cerrarlo no sirve, por qué. */
@@ -103,7 +108,15 @@ export function CurvasModule() {
   }
 
   const exportDxf = () => {
-    const dxf = sceneToDxf({ frame, contours, indexInterval, area: area ?? undefined, areaPolygon: polygon })
+    const dxf = sceneToDxf({
+      frame,
+      contours,
+      indexInterval,
+      area: area ?? undefined,
+      areaPolygon: polygon,
+      contexto: ctxDatos,
+      cotaBase: dem ? (p) => sampleClamped(dem, p.x, p.y) : undefined,
+    })
     download(`geoarc_curvas_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_UTM${frame.zone}${frame.south ? 'S' : 'N'}.dxf`, dxf, 'application/dxf')
   }
 
@@ -200,11 +213,26 @@ export function CurvasModule() {
                 Mostrar la malla del dato en el mapa (celdas de ~{fmtNum(dem.meta.nominalResolutionM)} m)
               </label>
               {showDataGrid && !dataGrid && <p className="text-xs text-slate-500">La malla es demasiado densa para dibujarla en esta área.</p>}
-              <button className={btn} onClick={exportDxf}>Exportar curvas DXF (UTM)</button>
             </>
           )}
           <SourceOptions />
         </Section>
+
+        {area && (
+          <Section n={3} title="Contexto: edificaciones y vías" done={!!ctxDatos}>
+            <ContextoPanel />
+          </Section>
+        )}
+
+        {dem && (
+          <Section n={4} title="Descargar" done={false}>
+            <button className={btnPrimary} onClick={exportDxf}>Descargar DXF (UTM)</button>
+            <p className="text-xs text-slate-500" data-testid="descarga-contenido">
+              Curvas con cota, área{ctxDatos ? ', edificaciones (con su altura) y vías' : ''}. Coordenadas UTM {frame.zone}
+              {frame.south ? 'S' : 'N'} (EPSG:{frame.epsg}), en metros.
+            </p>
+          </Section>
+        )}
       </ModulePanel>
 
       <main className="relative min-h-[420px] flex-1">
@@ -221,6 +249,8 @@ export function CurvasModule() {
             dataGrid={dataGrid}
             lot={[]}
             draft={polyDraft}
+            contexto={ctxDatos}
+            capas={capas}
             mode={mode}
             onPick={onPick}
             onFinishDraft={finishPolygon}

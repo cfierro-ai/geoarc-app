@@ -4,6 +4,9 @@ import type { EdgeRole, PerfilNormativo } from '../core/normativa/perfiles'
 import { reglaPorRol } from '../core/normativa/perfiles'
 import { lotFromDimensions } from '../core/envelope/lote'
 
+/** OpenFreeMap, estilo vectorial «Liberty»: mapa base y respaldo del contexto (sus teselas traen edificios y vías). */
+export const OFM_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
+
 export type DemSourceId = 'copernicus' | 'terrarium' | 'sintetico'
 
 export interface DemSourceInfo {

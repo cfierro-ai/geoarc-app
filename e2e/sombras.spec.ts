@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { interceptarTerrarium } from './util'
+import { interceptarContexto, interceptarTerrarium } from './util'
 
 /**
  * Estudio de sombras en plano (cota 0), el terreno por defecto: no pide red. Caso dorado del núcleo
@@ -38,6 +38,7 @@ test('sombras en plano: lote por dimensiones 20×20, rasante 70° → caso dorad
 
 test('sombras sobre el terreno del sitio: se descarga solo alrededor del lote', async ({ page }) => {
   const n = await interceptarTerrarium(page)
+  await interceptarContexto(page)
   await page.goto('/sombras')
   await page.getByRole('radio', { name: /Terreno del sitio/ }).check()
   await expect(page.getByText(/el terreno se descarga solo a su alrededor/)).toBeVisible()

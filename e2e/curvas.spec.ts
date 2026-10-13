@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { centroMapa, interceptarTerrarium } from './util'
+import { centroMapa, interceptarContexto, interceptarTerrarium } from './util'
 
 /**
  * Módulo de curvas, flujo del profesor: ubicar el sitio → dibujar el área → las curvas aparecen.
@@ -10,6 +10,7 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
   const n = await interceptarTerrarium(page)
+  await interceptarContexto(page)
   await page.goto('/curvas')
 
   // la fuente queda plegada en «Opciones avanzadas»; Copernicus se ve pero no se puede elegir
@@ -65,7 +66,7 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   // DXF: maestras cada 25 m (1 de 5) → la curva de 200 m, la del sitio, es maestra y lleva su cota
   const [descarga] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Exportar curvas DXF (UTM)' }).click(),
+    page.getByRole('button', { name: 'Descargar DXF (UTM)' }).click(),
   ])
   expect(descarga.suggestedFilename()).toMatch(/^geoarc_curvas_.*_UTM18S\.dxf$/)
   await descarga.saveAs('e2e/capturas/10-curvas-terrarium.dxf')

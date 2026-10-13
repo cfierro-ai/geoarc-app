@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createLocalFrame, type LonLat, type XY } from '../../core/geo/local'
-import { gridStats, sampleBilinear, type HeightGrid } from '../../core/dem/grid'
+import { gridStats, sampleBilinear, sampleClamped, type HeightGrid } from '../../core/dem/grid'
 import { flatGrid } from '../../core/dem/plano'
 import { contourLevels, isolines } from '../../core/contours/isolines'
 import { preseleccionEquidistancia } from '../../core/contours/escala'
@@ -54,6 +54,9 @@ export function SombrasModule() {
   const site = useAppState((s) => s.site)
   const terrain = useAppState((s) => s.terrain)
   const sombras = useAppState((s) => s.sombras)
+  const contexto = useAppState((s) => s.contexto)
+  const capas = useAppState((s) => s.capas)
+  const ctxDatos = contexto.estado === 'listo' ? contexto.datos : null
   const { terrainMode, lot, edges, maxHeight, didactic, exaggeration } = sombras
   const [mode, setMode] = useState<MapMode>('none')
   const [draft, setDraft] = useState<XY[]>([])
@@ -143,6 +146,8 @@ export function SombrasModule() {
       lot,
       lotZ: (p) => terrainFn(p.x, p.y),
       envelope,
+      contexto: ctxDatos,
+      cotaBase: grid ? (p) => sampleClamped(grid, p.x, p.y) : undefined,
     })
     download(`geoarc_sombras_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_UTM${frame.zone}${frame.south ? 'S' : 'N'}.dxf`, dxf, 'application/dxf')
   }
@@ -288,6 +293,12 @@ export function SombrasModule() {
               <label className="flex items-center gap-1">
                 <input type="checkbox" checked={didactic} onChange={(e) => actions.setSombras({ didactic: e.target.checked })} /> Mostrar planos de rasante
               </label>
+              {!!ctxDatos?.edificaciones.length && (
+                <label className="flex items-center gap-1" title="Edificaciones de OpenStreetMap, extruidas con su altura (height, o 3 m por piso)">
+                  <input type="checkbox" checked={capas.edificaciones} onChange={(e) => actions.setCapas({ edificaciones: e.target.checked })} /> Edificaciones del
+                  contexto
+                </label>
+              )}
               <label className="flex items-center gap-1">
                 Exageración vertical
                 <select className="rounded border border-slate-300 px-1" value={exaggeration} onChange={(e) => actions.setSombras({ exaggeration: +e.target.value })}>
@@ -317,6 +328,8 @@ export function SombrasModule() {
             dataGrid={null}
             lot={lot}
             draft={draft}
+            contexto={ctxDatos}
+            capas={capas}
             mode={mode}
             onPick={onPick}
             onFinishDraft={finishLot}
@@ -336,6 +349,7 @@ export function SombrasModule() {
               selectedEdge={selectedEdge}
               exaggeration={exaggeration}
               visible={view === '3d'}
+              edificaciones={capas.edificaciones ? ctxDatos?.edificaciones : undefined}
             />
           </div>
         )}

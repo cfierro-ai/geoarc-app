@@ -37,6 +37,40 @@ export async function interceptarTerrarium(page: Page) {
   return n
 }
 
+/** lon/lat a (x, y) m del sitio (aproximación local; basta para un fixture). */
+const desdeSitio = (x: number, y: number) => ({
+  lat: TEMUCO.lat + y / 111_320,
+  lon: TEMUCO.lon + x / (111_320 * Math.cos((TEMUCO.lat * Math.PI) / 180)),
+})
+const rect = (x: number, y: number, w: number, h: number) =>
+  [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]].map(([a, b]) => desdeSitio(a, b))
+
+/**
+ * Respuesta Overpass simulada alrededor del sitio: tres edificios (height 15; 4 pisos → 12 m; sin dato → 3 m) y dos
+ * vías. Los dos primeros quedan dentro del terreno del lote de ejemplo en el estudio de sombras; el tercero, fuera.
+ */
+export const CONTEXTO_TEMUCO = {
+  osm3s: { timestamp_osm_base: '2026-10-13T12:42:35Z' },
+  elements: [
+    { type: 'way', id: 1001, tags: { building: 'yes', height: '15' }, geometry: rect(30, 10, 20, 12) },
+    { type: 'way', id: 1002, tags: { building: 'house', 'building:levels': '4' }, geometry: rect(-40, -30, 10, 10) },
+    { type: 'way', id: 1003, tags: { building: 'yes' }, geometry: rect(60, -40, 8, 8) },
+    { type: 'way', id: 2001, tags: { highway: 'residential' }, geometry: [desdeSitio(-200, -60), desdeSitio(200, -60)] },
+    { type: 'way', id: 2002, tags: { highway: 'tertiary' }, geometry: [desdeSitio(-80, -200), desdeSitio(-80, 200)] },
+  ],
+}
+
+/** Intercepta Overpass (sin red): responde `respuesta` (por defecto, sin entidades). Devuelve las peticiones. */
+export async function interceptarContexto(page: Page, respuesta: object = { elements: [] }) {
+  const n = { overpass: 0, cuerpos: [] as string[] }
+  await page.route('https://overpass-api.de/**', (r) => {
+    n.overpass++
+    n.cuerpos.push(decodeURIComponent(r.request().postData() ?? ''))
+    return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(respuesta) })
+  })
+  return n
+}
+
 /** Dibuja el área con dos clics en esquinas opuestas, a ±d px del centro del mapa (a zoom 17, ~0,47 m/px en Temuco). */
 export async function dibujarArea(page: Page, d = 100) {
   const { cx, cy } = await centroMapa(page)

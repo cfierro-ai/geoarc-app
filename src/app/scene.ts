@@ -1,6 +1,7 @@
-import { createLocalFrame, type LonLat, type XY } from '../core/geo/local'
+import { createLocalFrame, type LocalFrame, type LonLat, type XY } from '../core/geo/local'
 import { rectFromCorners, squareRect, type Rect } from '../core/dem/area'
 import type { PerfilNormativo } from '../core/normativa/perfiles'
+import type { AlturaFuente, Contexto } from '../core/contexto/contexto'
 import { isSourceAvailable, type DemSourceId, type EdgeSetting, type TerrainMode } from './model'
 
 /** v1 (GEO·ARC 0.1): área cuadrada centrada en el sitio, celda elegida a mano. */
@@ -31,10 +32,47 @@ interface SceneFileV3 extends Omit<SceneFileV2, 'version'> {
   terrainMode: TerrainMode
 }
 
-/** v4: el área puede ser un polígono (vértices en lon/lat); `areaLonLat` sigue siendo su rectángulo envolvente. */
+type LL = [number, number]
+
+/** Contexto en el archivo: lon/lat con 7 decimales (~1 cm), así no depende del marco local. */
+interface ContextoArchivo {
+  fuente: Contexto['fuente']
+  fecha: string
+  edificaciones: { id: string; anillo: LL[]; huecos: LL[][]; altura: number; alturaFuente: AlturaFuente }[]
+  vias: { id: string; linea: LL[]; clase: string }[]
+}
+
+/**
+ * v4: el área puede ser un polígono (vértices en lon/lat; `areaLonLat` sigue siendo su rectángulo envolvente) y se
+ * guarda el contexto descargado (edificaciones y vías de OSM): al abrir la escena no se vuelve a pedir.
+ */
 export interface SceneFileV4 extends Omit<SceneFileV3, 'version'> {
   version: 4
   areaPolygonLonLat: LonLat[] | null
+  contexto: ContextoArchivo | null
+}
+
+function contextoAArchivo(c: Contexto, fr: LocalFrame): ContextoArchivo {
+  const ll = (p: XY): LL => {
+    const g = fr.toLonLat(p)
+    return [+g.lon.toFixed(7), +g.lat.toFixed(7)]
+  }
+  return {
+    fuente: c.fuente,
+    fecha: c.fecha,
+    edificaciones: c.edificaciones.map((e) => ({ id: e.id, anillo: e.anillo.map(ll), huecos: e.huecos.map((h) => h.map(ll)), altura: e.altura, alturaFuente: e.alturaFuente })),
+    vias: c.vias.map((v) => ({ id: v.id, linea: v.linea.map(ll), clase: v.clase })),
+  }
+}
+
+function contextoDesdeArchivo(c: ContextoArchivo, fr: LocalFrame): Contexto {
+  const xy = ([lon, lat]: LL) => fr.toLocal({ lon, lat })
+  return {
+    fuente: c.fuente,
+    fecha: c.fecha,
+    edificaciones: c.edificaciones.map((e) => ({ ...e, anillo: e.anillo.map(xy), huecos: e.huecos.map((h) => h.map(xy)) })),
+    vias: c.vias.map((v) => ({ ...v, linea: v.linea.map(xy) })),
+  }
 }
 
 /** Escena en el marco local del sitio, lista para cargar en la app. */
@@ -44,6 +82,8 @@ export interface Scene {
   area: Rect | null
   /** Polígono del área (null = el área es el rectángulo). */
   areaPolygon: XY[] | null
+  /** Contexto descargado para el área (null = no hay). */
+  contexto: Contexto | null
   demSource: DemSourceId
   contourInterval: number
   indexEvery: number
@@ -64,6 +104,7 @@ export function serializeScene(s: Scene): SceneFileV4 {
     site: s.site,
     areaLonLat: s.area ? [fr.toLonLat({ x: s.area.minX, y: s.area.minY }), fr.toLonLat({ x: s.area.maxX, y: s.area.maxY })] : null,
     areaPolygonLonLat: s.area && s.areaPolygon ? s.areaPolygon.map((p) => fr.toLonLat(p)) : null,
+    contexto: s.area && s.contexto ? contextoAArchivo(s.contexto, fr) : null,
     demSource: s.demSource,
     contourInterval: s.contourInterval,
     indexEvery: s.indexEvery,
@@ -92,6 +133,7 @@ export function parseScene(text: string): Scene {
     site: f.site,
     area,
     areaPolygon: f.version === 4 && area && f.areaPolygonLonLat ? f.areaPolygonLonLat.map((p) => fr.toLocal(p)) : null,
+    contexto: f.version === 4 && area && f.contexto ? contextoDesdeArchivo(f.contexto, fr) : null,
     demSource: available ? f.demSource : 'terrarium',
     notice: available ? undefined : 'La escena usaba Copernicus, que requiere proxy: se usa Terrarium.',
     contourInterval: f.contourInterval,

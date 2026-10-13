@@ -18,10 +18,10 @@ import type { LocalFrame, LonLat, XY } from '../../core/geo/local'
 import { isIndexLevel, type Isoline } from '../../core/contours/isolines'
 import { cotaLabel } from '../../core/contours/escala'
 import { areaProblem, rectCorners, rectFromCorners, rectSize, type Rect } from '../../core/dem/area'
-import { edgeColor, fmtAreaSize, type MapMode } from '../model'
-
-/** OpenFreeMap, estilo vectorial «Liberty». Sus atribuciones vienen en el TileJSON y MapLibre las muestra. */
-const OFM_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
+import type { Contexto } from '../../core/contexto/contexto'
+import type { CapasState } from '../store'
+// OpenFreeMap, estilo vectorial «Liberty». Sus atribuciones vienen en el TileJSON y MapLibre las muestra.
+import { edgeColor, fmtAreaSize, OFM_STYLE_URL, type MapMode } from '../model'
 
 type Basemap = 'ofm' | 'osm' | 'sat'
 const BASEMAPS: { id: Basemap; label: string; title: string }[] = [
@@ -90,6 +90,9 @@ interface Props {
   dataGrid: { a: XY; b: XY }[] | null
   lot: XY[]
   draft: XY[]
+  /** Edificaciones y vías de OSM, y qué capas se ven. */
+  contexto: Contexto | null
+  capas: CapasState
   mode: MapMode
   onPick: (p: LonLat) => void
   /** Doble clic al dibujar un lote o un polígono: cerrar el dibujo. */
@@ -148,6 +151,13 @@ export function MapView(p: Props) {
     // 'style.load' y no 'load': las capas propias solo necesitan el estilo; 'load' espera además todas las teselas
     // del mapa base (vectoriales, con edificios 3D), y en una red lenta curvas y lote tardarían en aparecer.
     m.once('style.load', () => {
+      // contexto primero: queda bajo el área, las curvas y el lote
+      const osm = '© OpenStreetMap contributors'
+      m.addSource('ctx-edif', { type: 'geojson', data: empty, attribution: osm })
+      m.addSource('ctx-vias', { type: 'geojson', data: empty, attribution: osm })
+      m.addLayer({ id: 'ctx-edif-fill', type: 'fill', source: 'ctx-edif', paint: { 'fill-color': '#475569', 'fill-opacity': 0.35 } })
+      m.addLayer({ id: 'ctx-edif-line', type: 'line', source: 'ctx-edif', paint: { 'line-color': '#1e293b', 'line-width': 0.8 } })
+      m.addLayer({ id: 'ctx-vias', type: 'line', source: 'ctx-vias', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#c2410c', 'line-width': 1.6, 'line-opacity': 0.9 } })
       m.addSource('area', { type: 'geojson', data: empty })
       m.addSource('area-draft', { type: 'geojson', data: empty })
       m.addSource('datagrid', { type: 'geojson', data: empty })
@@ -267,6 +277,42 @@ export function MapView(p: Props) {
     })
     m.getContainer().setAttribute('data-malla', String(p.dataGrid?.length ?? 0))
   }, [p.frame, p.dataGrid, ready])
+
+  // contexto: datos al cambiar; visibilidad según las casillas «Edificaciones» y «Vías»
+  useEffect(() => {
+    const m = map.current
+    if (!m || !ready) return
+    const ll = (q: XY) => {
+      const g = p.frame.toLonLat(q)
+      return [g.lon, g.lat]
+    }
+    const ring = (r: XY[]) => [...r.map(ll), ll(r[0])]
+    const c = p.contexto
+    ;(m.getSource('ctx-edif') as GeoJSONSource).setData({
+      type: 'FeatureCollection',
+      features: (c?.edificaciones ?? []).map((e) => ({
+        type: 'Feature',
+        properties: { altura: e.altura },
+        geometry: { type: 'Polygon', coordinates: [ring(e.anillo), ...e.huecos.map(ring)] },
+      })),
+    })
+    ;(m.getSource('ctx-vias') as GeoJSONSource).setData({
+      type: 'FeatureCollection',
+      features: (c?.vias ?? []).map((v) => ({ type: 'Feature', properties: { clase: v.clase }, geometry: { type: 'LineString', coordinates: v.linea.map(ll) } })),
+    })
+  }, [p.frame, p.contexto, ready])
+
+  useEffect(() => {
+    const m = map.current
+    if (!m || !ready) return
+    const vis = (on: boolean) => (on ? 'visible' : 'none')
+    m.setLayoutProperty('ctx-edif-fill', 'visibility', vis(p.capas.edificaciones))
+    m.setLayoutProperty('ctx-edif-line', 'visibility', vis(p.capas.edificaciones))
+    m.setLayoutProperty('ctx-vias', 'visibility', vis(p.capas.vias))
+    // señales para e2e: cuántas entidades se ven
+    m.getContainer().setAttribute('data-edificaciones', String(p.capas.edificaciones ? (p.contexto?.edificaciones.length ?? 0) : 0))
+    m.getContainer().setAttribute('data-vias', String(p.capas.vias ? (p.contexto?.vias.length ?? 0) : 0))
+  }, [p.capas, p.contexto, ready])
 
   useEffect(() => {
     const m = map.current

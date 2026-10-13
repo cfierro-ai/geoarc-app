@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { centroMapa, dentroOBorde, interceptarTerrarium, polilineasDxf } from './util'
+import { centroMapa, dentroOBorde, interceptarContexto, interceptarTerrarium, polilineasDxf } from './util'
 
 /**
  * Área como polígono (clics + doble clic). El terreno se calcula sobre el rectángulo envolvente y las curvas se recortan
@@ -10,6 +10,7 @@ test('curvas: área como polígono → curvas recortadas al polígono, también 
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
   const n = await interceptarTerrarium(page)
+  await interceptarContexto(page)
   await page.goto('/curvas')
   const { cx, cy } = await centroMapa(page)
 
@@ -33,7 +34,7 @@ test('curvas: área como polígono → curvas recortadas al polígono, también 
   // DXF: AREA es el triángulo, y ningún vértice de las curvas sale de él (tolerancia: los 3 decimales del DXF)
   const [descarga] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Exportar curvas DXF (UTM)' }).click(),
+    page.getByRole('button', { name: 'Descargar DXF (UTM)' }).click(),
   ])
   await descarga.saveAs('e2e/capturas/15-area-poligono.dxf')
   const dxf = await readFile(await descarga.path(), 'utf8')
@@ -53,6 +54,7 @@ test('curvas: área como polígono → curvas recortadas al polígono, también 
 
 test('curvas: un polígono de 2 vértices no se cierra y el panel dice por qué', async ({ page }) => {
   await interceptarTerrarium(page)
+  await interceptarContexto(page)
   await page.goto('/curvas')
   const { cx, cy } = await centroMapa(page)
   await page.getByRole('button', { name: 'Dibujar polígono' }).click()

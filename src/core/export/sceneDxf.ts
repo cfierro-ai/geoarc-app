@@ -6,6 +6,7 @@ import { cotaLabel } from '../contours/escala'
 import { labelHeight, labelPlacements } from '../contours/labels'
 import { bbox } from '../envelope/polygon'
 import { DxfWriter } from './dxf'
+import { ATRIBUCION_OSM, type Contexto } from '../contexto/contexto'
 
 export interface SceneForDxf {
   frame: LocalFrame
@@ -19,12 +20,18 @@ export interface SceneForDxf {
   lot?: XY[]
   lotZ?: (p: XY) => number
   envelope?: EnvelopeResult
+  /** Edificaciones y vías de OpenStreetMap. */
+  contexto?: Contexto | null
+  /** Cota del terreno para apoyar el contexto (por defecto 0). */
+  cotaBase?: (p: XY) => number
 }
 
 /**
  * DXF georreferenciado en UTM (huso del sitio, WGS84), metros.
- * Capas: CURVAS, CURVAS_MAESTRAS, ETIQUETAS (TEXT con la cota sobre las maestras) y AREA (rectángulo de extracción,
- * cota 0) cuando hay terreno; LOTE y ENVOLVENTE (malla 3DFACE) cuando hay lote. Un estudio en plano no lleva curvas.
+ * Capas: CURVAS, CURVAS_MAESTRAS, ETIQUETAS (TEXT con la cota sobre las maestras) y AREA (rectángulo o polígono del
+ * área, cota 0) cuando hay terreno; EDIFICACIONES (huella a la cota más baja del terreno bajo ella, con la altura como
+ * espesor), VIALIDAD (ejes 3D sobre el terreno) y ATRIBUCION (© OpenStreetMap contributors, ODbL) cuando hay contexto;
+ * LOTE y ENVOLVENTE (malla 3DFACE) cuando hay lote. Un estudio en plano no lleva curvas.
  */
 export function sceneToDxf(s: SceneForDxf): string {
   const w = new DxfWriter()
@@ -50,6 +57,23 @@ export function sceneToDxf(s: SceneForDxf): string {
   }
 
   if (s.area) w.polyline2d('AREA', (s.areaPolygon ?? rectCorners(s.area)).map((p) => s.frame.toUTM(p)), true)
+
+  const ctx = s.contexto
+  if (ctx && (ctx.edificaciones.length || ctx.vias.length)) {
+    const base = (p: XY) => {
+      const z = s.cotaBase ? s.cotaBase(p) : 0
+      return Number.isFinite(z) ? z : 0
+    }
+    w.addLayer('EDIFICACIONES', 9).addLayer('VIALIDAD', 6).addLayer('ATRIBUCION', 7)
+    for (const e of ctx.edificaciones) {
+      const z0 = Math.min(...e.anillo.map(base))
+      for (const r of [e.anillo, ...e.huecos]) w.polyline2d('EDIFICACIONES', r.map((p) => s.frame.toUTM(p)), true, z0, e.altura)
+    }
+    for (const v of ctx.vias) w.polyline3d('VIALIDAD', v.linea.map((p) => U(p, base(p))), false)
+    // atribución bajo el área (ODbL): «© OpenStreetMap contributors (ODbL)»
+    const b = s.area ?? bbox([...ctx.edificaciones.flatMap((e) => e.anillo), ...ctx.vias.flatMap((v) => v.linea)])
+    w.text('ATRIBUCION', U({ x: (b.minX + b.maxX) / 2, y: b.minY - 2 * th }, 0), th, ATRIBUCION_OSM)
+  }
 
   if (s.lot && s.lot.length > 2) {
     w.addLayer('LOTE', 1).polyline3d('LOTE', s.lot.map((p) => U(p, s.lotZ ? s.lotZ(p) : 0)), true)

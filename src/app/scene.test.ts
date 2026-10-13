@@ -2,11 +2,14 @@ import { squareRect } from '../core/dem/area'
 import { PERFIL_OGUC } from '../core/normativa/perfiles'
 import { defaultEdges, fmtAreaSize, TEMUCO } from './model'
 import { parseScene, serializeScene, type Scene } from './scene'
+import type { Contexto } from '../core/contexto/contexto'
+import type { XY } from '../core/geo/local'
 
 const scene: Scene = {
   site: TEMUCO,
   area: { minX: -120.5, minY: -40, maxX: 80, maxY: 95.25 },
   areaPolygon: null,
+  contexto: null,
   demSource: 'terrarium',
   contourInterval: 5,
   indexEvery: 4,
@@ -40,18 +43,48 @@ describe('archivo .geoarc', () => {
     })
   })
 
+  it('v4: el contexto (edificaciones y vías) se guarda en lon/lat y vuelve igual (~1 cm)', () => {
+    const contexto: Contexto = {
+      fuente: 'overpass',
+      fecha: '2026-10-13T12:42:35Z',
+      edificaciones: [
+        {
+          id: 'r21',
+          anillo: [{ x: 50, y: 0 }, { x: 80, y: 0 }, { x: 80, y: 30 }, { x: 50, y: 30 }],
+          huecos: [[{ x: 60, y: 10 }, { x: 70, y: 10 }, { x: 70, y: 20 }]],
+          altura: 9,
+          alturaFuente: 'height',
+        },
+      ],
+      vias: [{ id: 'w31', linea: [{ x: -20, y: -5 }, { x: 100, y: -5 }], clase: 'residential' }],
+    }
+    const s = parseScene(JSON.stringify(serializeScene({ ...scene, contexto })))
+    const c = s.contexto!
+    expect([c.fuente, c.fecha, c.edificaciones[0].id, c.edificaciones[0].altura, c.edificaciones[0].alturaFuente, c.vias[0].clase]).toEqual([
+      'overpass', '2026-10-13T12:42:35Z', 'r21', 9, 'height', 'residential',
+    ])
+    const pares: [XY, XY][] = [
+      ...contexto.edificaciones[0].anillo.map((p, i): [XY, XY] => [p, c.edificaciones[0].anillo[i]]),
+      ...contexto.edificaciones[0].huecos[0].map((p, i): [XY, XY] => [p, c.edificaciones[0].huecos[0][i]]),
+      ...contexto.vias[0].linea.map((p, i): [XY, XY] => [p, c.vias[0].linea[i]]),
+    ]
+    for (const [a, b] of pares) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeLessThan(0.02)
+  })
+
   it('v3 (sin polígono) se abre con el área rectangular', () => {
-    const { areaPolygonLonLat: _p, ...v4 } = serializeScene(scene)
+    const { areaPolygonLonLat: _p, contexto: _c, ...v4 } = serializeScene(scene)
     void _p
+    void _c
     const s = parseScene(JSON.stringify({ ...v4, version: 3 }))
     expect([s.terrainMode, s.areaPolygon]).toEqual(['sitio', null])
     expect(s.area!.maxX).toBeCloseTo(80, 6)
   })
 
   it('v2: con lote y área, el estudio sigue sobre el terreno del sitio; sin lote, en plano', () => {
-    const { terrainMode: _omit, areaPolygonLonLat: _p, ...v3 } = serializeScene(scene)
+    const { terrainMode: _omit, areaPolygonLonLat: _p, contexto: _c, ...v3 } = serializeScene(scene)
     void _omit
     void _p
+    void _c
     const v2 = { ...v3, version: 2 }
     expect(parseScene(JSON.stringify(v2)).terrainMode).toBe('sitio')
     expect(parseScene(JSON.stringify({ ...v2, lotLonLat: [] })).terrainMode).toBe('plano')
