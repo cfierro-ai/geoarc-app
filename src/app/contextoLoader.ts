@@ -1,7 +1,15 @@
 import type { LocalFrame } from '../core/geo/local'
 import type { Rect } from '../core/dem/area'
 import { localRectBBox } from '../core/dem/resample'
-import { consultaOverpass, contextoDesdeOverpass, MARGEN_CONTEXTO, type Contexto, type OverpassRespuesta } from '../core/contexto/contexto'
+import {
+  consultaOverpass,
+  contextoDesdeOverpass,
+  MARGEN_CONTEXTO,
+  rectContexto,
+  recortarContexto,
+  type Contexto,
+  type OverpassRespuesta,
+} from '../core/contexto/contexto'
 import { contextoDesdeTeselas, teselasDeBBox, ZOOM_TESELAS } from '../core/contexto/teselas'
 import { OFM_STYLE_URL } from './model'
 
@@ -58,11 +66,12 @@ async function desdeTeselas(frame: LocalFrame, area: Rect, f: typeof fetch): Pro
  * building:levels); si falla (límite de uso de la red de la sala, caída), se usan las teselas de OpenFreeMap.
  */
 export async function cargarContexto(frame: LocalFrame, area: Rect, f: typeof fetch = fetch): Promise<ContextoCargado> {
+  const recuadro = rectContexto(area)
   try {
-    return { contexto: await desdeOverpass(frame, area, f) }
+    return { contexto: recortarContexto(await desdeOverpass(frame, area, f), recuadro) }
   } catch (e) {
     try {
-      const contexto = await desdeTeselas(frame, area, f)
+      const contexto = recortarContexto(await desdeTeselas(frame, area, f), recuadro)
       return {
         contexto,
         aviso: `${msg(e)}: se usaron las teselas de OpenFreeMap. Los edificios vienen agrupados por altura y se cortan en el borde de cada tesela.`,

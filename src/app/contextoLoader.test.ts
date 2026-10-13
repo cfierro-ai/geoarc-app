@@ -41,6 +41,20 @@ describe('carga del contexto', () => {
     expect(s).toBeGreaterThan(so51.lat - 1e-4) // no mucho más: ~50 m
   })
 
+  it('el contexto se recorta al área + 50 m (Overpass entrega las vías enteras, aunque midan kilómetros)', async () => {
+    const ll = (x: number, y: number) => {
+      const g = frame.toLonLat({ x, y })
+      return { lat: g.lat, lon: g.lon }
+    }
+    const { f } = fetchFalso({
+      [OVERPASS_URL]: () => json({ elements: [{ type: 'way', id: 9, tags: { highway: 'primary' }, geometry: [ll(-3000, 0), ll(3000, 0)] }] }),
+    })
+    const { contexto } = await cargarContexto(frame, AREA, f)
+    const xs = contexto.vias[0].linea.map((p) => p.x)
+    expect(Math.min(...xs)).toBeCloseTo(AREA.minX - 50, 6)
+    expect(Math.max(...xs)).toBeCloseTo(AREA.maxX + 50, 6)
+  })
+
   it('si Overpass falla (429), usa las teselas de OpenFreeMap y lo avisa', async () => {
     const { f, pedidas } = fetchFalso({
       [OVERPASS_URL]: () => new Response('Too Many Requests', { status: 429 }),

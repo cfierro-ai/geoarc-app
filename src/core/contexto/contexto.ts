@@ -1,6 +1,7 @@
 import type { LocalFrame, XY } from '../geo/local'
 import type { Rect } from '../dem/area'
-import { pointInPolygon } from '../envelope/polygon'
+import { bbox, pointInPolygon } from '../envelope/polygon'
+import { clipPolyline } from '../contours/clip'
 
 /**
  * Contexto del área para la descarga: edificaciones y vías de OpenStreetMap (© OpenStreetMap contributors, ODbL).
@@ -46,6 +47,24 @@ export interface Contexto {
 
 export function rectContexto(area: Rect, margen = MARGEN_CONTEXTO): Rect {
   return { minX: area.minX - margen, minY: area.minY - margen, maxX: area.maxX + margen, maxY: area.maxY + margen }
+}
+
+/**
+ * Deja el contexto dentro del recuadro (el área + 50 m): las vías se cortan en su borde (Overpass las entrega enteras y
+ * una avenida puede medir kilómetros; las teselas cubren ~2 km); un edificio que toca el recuadro se conserva entero.
+ */
+export function recortarContexto(c: Contexto, r: Rect): Contexto {
+  const borde: XY[] = [{ x: r.minX, y: r.minY }, { x: r.maxX, y: r.minY }, { x: r.maxX, y: r.maxY }, { x: r.minX, y: r.maxY }]
+  const toca = (pts: XY[]) => {
+    const b = bbox(pts)
+    return b.maxX >= r.minX && b.minX <= r.maxX && b.maxY >= r.minY && b.minY <= r.maxY
+  }
+  const vias: Via[] = []
+  for (const v of c.vias) {
+    const tramos = clipPolyline(v.linea, false, borde).filter((t) => t.length > 1)
+    tramos.forEach((linea, k) => vias.push({ ...v, id: tramos.length > 1 ? `${v.id}-${k + 1}` : v.id, linea }))
+  }
+  return { ...c, edificaciones: c.edificaciones.filter((e) => toca(e.anillo)), vias }
 }
 
 const numero = (s: string | undefined, entero: RegExp) => {

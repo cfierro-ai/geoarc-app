@@ -8,6 +8,7 @@ import {
   contextoDesdeOverpass,
   MARGEN_CONTEXTO,
   rectContexto,
+  recortarContexto,
   unirTramos,
   type OverpassRespuesta,
 } from './contexto'
@@ -88,6 +89,32 @@ describe('contexto desde Overpass', () => {
     // una sola vía: la proyectada no es contexto
     expect(c.vias.map((v) => [v.id, v.clase, v.linea.length])).toEqual([['w31', 'residential', 2]])
     expect(cerca(c.vias[0].linea[1], { x: 100, y: -5 })).toBe(true)
+  })
+
+  it('recorte al área + 50 m: vías cortadas en el borde; edificios enteros si tocan el recuadro, fuera si no', () => {
+    const r = { minX: -100, minY: -100, maxX: 100, maxY: 100 }
+    const ed = (id: string, x: number, y: number) => ({ id, anillo: cuadrado(x, y, 20).slice(0, -1), huecos: [], altura: 3, alturaFuente: 'defecto' as const })
+    const c = recortarContexto(
+      {
+        fuente: 'teselas',
+        fecha: 'f',
+        edificaciones: [ed('dentro', 0, 0), ed('borde', 90, 0), ed('lejos', 500, 500)],
+        vias: [
+          { id: 'avenida', linea: [{ x: -2000, y: 10 }, { x: 2000, y: 10 }], clase: 'primary' },
+          { id: 'lejana', linea: [{ x: -2000, y: 900 }, { x: 2000, y: 900 }], clase: 'primary' },
+          // entra, sale y vuelve a entrar: dos tramos
+          { id: 'zeta', linea: [{ x: -50, y: 50 }, { x: -50, y: 300 }, { x: 50, y: 300 }, { x: 50, y: 50 }], clase: 'service' },
+        ],
+      },
+      r,
+    )
+    expect(c.edificaciones.map((e) => e.id)).toEqual(['dentro', 'borde'])
+    expect(c.edificaciones[1].anillo).toHaveLength(4) // entero, aunque salga del recuadro
+    expect(c.vias.map((v) => [v.id, v.linea.map((p) => [p.x, p.y])])).toEqual([
+      ['avenida', [[-100, 10], [100, 10]]],
+      ['zeta-1', [[-50, 50], [-50, 100]]],
+      ['zeta-2', [[50, 100], [50, 50]]],
+    ])
   })
 
   it('unir tramos por sus extremos (en cualquier sentido)', () => {
