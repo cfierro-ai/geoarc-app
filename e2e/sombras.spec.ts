@@ -3,8 +3,8 @@ import { interceptarContexto, interceptarTerrarium } from './util'
 
 /**
  * Estudio de sombras en plano (cota 0), el terreno por defecto: no pide red. Caso dorado del núcleo
- * («lote plano 20×20, rasante 70°»): techo al centro = 10·tan 70° = 27,47 m. La UI muestra la altura máxima de las
- * celdas de cálculo (0,25 m); la más central está a 0,125 m del centro → 9,875·tan 70° = 27,13 m.
+ * («lote plano 20×20, rasante 70°»): techo al centro = 10·tan 70° = 27,47 m. La celda de cálculo más central está a
+ * 0,125 m del centro (27,13 m); la altura máxima se refina bajo la celda hasta 1 mm y el panel muestra 27,47 m.
  */
 test('sombras en plano: lote por dimensiones 20×20, rasante 70° → caso dorado', async ({ page }) => {
   const errors: string[] = []
@@ -26,8 +26,9 @@ test('sombras en plano: lote por dimensiones 20×20, rasante 70° → caso dorad
   await page.getByLabel('Rol lado 1').selectOption('deslinde')
   await page.getByLabel('Altura máxima').fill('0')
   await expect(page.getByTestId('terreno-estudio')).toHaveText('Plano (cota 0)')
-  await expect(page.getByTestId('altura-max')).toHaveText('27,1 m')
+  await expect(page.getByTestId('altura-max')).toHaveText('27,47 m') // 10·tan 70° = 27,4748 (±0,01)
   await expect(page.getByTestId('results')).toContainText('400,0 m²')
+  await page.getByTestId('results').screenshot({ path: 'e2e/capturas/12a-sombras-resultados.png' })
   expect(n.terrarium).toBe(0) // el plano no usa red
 
   await page.getByRole('button', { name: 'Vista 3D' }).click()

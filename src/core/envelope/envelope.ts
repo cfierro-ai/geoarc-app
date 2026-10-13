@@ -54,8 +54,43 @@ export interface EnvelopeResult {
     lotArea: number
     footprintArea: number
     volume: number
+    /** Altura máxima alcanzable sobre el suelo, refinada bajo la celda (ver refineMax). */
     maxRel: number
+    /** Dónde se alcanza. */
+    maxAt: XY
   }
+}
+
+/** Paso final del refinamiento de la altura máxima (m). */
+export const REFINE_MIN_STEP = 0.001
+
+/**
+ * Altura máxima alcanzable con precisión bajo la celda: la grilla solo evalúa centros de celda (en un lote 20 × 20 a
+ * 70°, el más cercano al centro da 27,13 m y no 27,47). Desde la mejor celda se prueba en 8 direcciones con un paso que
+ * parte en media celda; si ninguna mejora, el paso se divide por 2 hasta REFINE_MIN_STEP (1 mm).
+ */
+export function refineMax(ctx: EnvelopeContext, start: XY, step: number): { p: XY; rel: number } {
+  const rel = (p: XY) => {
+    const r = evaluateAt(ctx, p)
+    return Number.isNaN(r.top) ? -Infinity : r.top - r.ground
+  }
+  let p = start
+  let best = rel(p)
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+  for (let s = step; s >= REFINE_MIN_STEP; ) {
+    let moved = false
+    for (const [dx, dy] of dirs) {
+      const q = { x: p.x + dx * s, y: p.y + dy * s }
+      const v = rel(q)
+      if (v > best + 1e-12) {
+        best = v
+        p = q
+        moved = true
+      }
+    }
+    if (!moved) s /= 2
+  }
+  return { p, rel: best }
 }
 
 interface PreparedEdge {
@@ -158,6 +193,7 @@ export function computeEnvelope(input: EnvelopeInput): EnvelopeResult {
   let footprint = 0
   let volume = 0
   let maxRel = 0
+  let maxAt: XY = { x: NaN, y: NaN }
   const cellArea = cell * cell
   for (let j = 0; j < ny; j++) {
     for (let i = 0; i < nx; i++) {
@@ -172,10 +208,14 @@ export function computeEnvelope(input: EnvelopeInput): EnvelopeResult {
       if (h > 0) {
         footprint += cellArea
         volume += h * cellArea
-        if (h > maxRel) maxRel = h
+        if (h > maxRel) {
+          maxRel = h
+          maxAt = { x: x0 + i * cell, y: y0 + j * cell }
+        }
       }
     }
   }
+  if (maxRel > 0) ({ p: maxAt, rel: maxRel } = refineMax(ctx, maxAt, cell / 2))
   return {
     nx,
     ny,
@@ -186,7 +226,7 @@ export function computeEnvelope(input: EnvelopeInput): EnvelopeResult {
     ground,
     rel,
     governing,
-    stats: { lotArea: area(input.lot), footprintArea: footprint, volume, maxRel },
+    stats: { lotArea: area(input.lot), footprintArea: footprint, volume, maxRel, maxAt },
   }
 }
 

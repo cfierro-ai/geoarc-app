@@ -268,7 +268,7 @@ export function SombrasModule() {
                 <dt className="text-slate-500">Superficie lote</dt><dd className="text-right font-medium">{fmt(envelope.stats.lotArea)} m²</dd>
                 <dt className="text-slate-500">Huella edificable</dt><dd className="text-right font-medium">{fmt(envelope.stats.footprintArea)} m²</dd>
                 <dt className="text-slate-500">Volumen máx. envolvente</dt><dd className="text-right font-medium" data-testid="volume">{fmt(envelope.stats.volume, 0)} m³</dd>
-                <dt className="text-slate-500">Altura máx. alcanzable</dt><dd className="text-right font-medium" data-testid="altura-max">{fmt(envelope.stats.maxRel)} m</dd>
+                <dt className="text-slate-500">Altura máx. alcanzable</dt><dd className="text-right font-medium" data-testid="altura-max" title="Refinada bajo la celda de cálculo, al milímetro">{fmt(envelope.stats.maxRel, 2)} m</dd>
               </dl>
               <div>
                 <p className="mb-1 text-xs text-slate-500">¿Qué restricción manda en cada parte de la huella?</p>
