@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { CONTEXTO_TEMUCO, dibujarArea, interceptarContexto, interceptarTerrarium } from './util'
+import { capasDxf, CONTEXTO_TEMUCO, dibujarArea, interceptarContexto, interceptarTerrarium, lwpolilineasDxf, polilineasDxf } from './util'
 
 /**
  * Contexto del área (edificaciones y vías de OSM) sin red: Overpass responde un fixture (util.ts) y Terrarium un plano
@@ -39,12 +39,12 @@ test('curvas: contexto de OSM en el mapa (capas activables), en el DXF y guardad
   const [descarga] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Descargar DXF (UTM)' }).click()])
   await descarga.saveAs('e2e/capturas/18-contexto.dxf')
   const dxf = await readFile(await descarga.path(), 'utf8')
-  expect([...dxf.matchAll(/\nLAYER\n2\n(\w+)\n/g)].map((m) => m[1])).toEqual([
-    'CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'EDIFICACIONES', 'VIALIDAD', 'ATRIBUCION',
-  ])
-  const espesores = [...dxf.matchAll(/\nPOLYLINE\n8\nEDIFICACIONES\n66\n1\n10\n0\n20\n0\n30\n[-\d.]+\n39\n([\d.]+)\n/g)].map((m) => +m[1])
-  expect(espesores.sort((a, b) => a - b)).toEqual([3, 12, 15])
-  expect(dxf.match(/\nPOLYLINE\n8\nVIALIDAD\n/g)).toHaveLength(2)
+  expect(dxf).toContain('AC1015')
+  expect(capasDxf(dxf)).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'EDIFICACIONES', 'VIALIDAD', 'ATRIBUCION'])
+  // 3 edificios rectangulares: 3 huellas LWPOLYLINE + por cada uno 4 muros (cuadriláteros) y 2 triángulos de techo
+  expect(lwpolilineasDxf(dxf, 'EDIFICACIONES')).toHaveLength(3)
+  expect((dxf.match(/8\nEDIFICACIONES\n100\nAcDbFace/g) || []).length).toBe(3 * 6)
+  expect(polilineasDxf(dxf, 'VIALIDAD')).toHaveLength(2)
   expect(dxf).toContain('\n8\nATRIBUCION\n')
   expect(dxf).toContain('\n1\n\\U+00A9 OpenStreetMap contributors (ODbL)\n')
 

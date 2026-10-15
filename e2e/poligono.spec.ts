@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { centroMapa, dentroOBorde, interceptarContexto, interceptarTerrarium, polilineasDxf } from './util'
+import { centroMapa, dentroOBorde, interceptarContexto, interceptarTerrarium, lwpolilineasDxf } from './util'
 
 /**
  * Área como polígono (clics + doble clic). El terreno se calcula sobre el rectángulo envolvente y las curvas se recortan
@@ -38,9 +38,9 @@ test('curvas: área como polígono → curvas recortadas al polígono, también 
   ])
   await descarga.saveAs('e2e/capturas/15-area-poligono.dxf')
   const dxf = await readFile(await descarga.path(), 'utf8')
-  const [tri] = polilineasDxf(dxf, 'AREA')
+  const [tri] = lwpolilineasDxf(dxf, 'AREA')
   expect(tri).toHaveLength(3)
-  const curvas = [...polilineasDxf(dxf, 'CURVAS'), ...polilineasDxf(dxf, 'CURVAS_MAESTRAS')]
+  const curvas = [...lwpolilineasDxf(dxf, 'CURVAS'), ...lwpolilineasDxf(dxf, 'CURVAS_MAESTRAS')]
   expect(curvas.length).toBeGreaterThan(3)
   const fuera = curvas.flat().filter((p) => !dentroOBorde(p, tri, 0.01))
   expect(fuera).toEqual([])

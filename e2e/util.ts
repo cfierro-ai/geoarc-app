@@ -82,6 +82,37 @@ export async function dibujarArea(page: Page, d = 100) {
 }
 
 /** Vértices de las POLYLINE de una capa de un DXF R12 (x, y en UTM), una lista por polilínea. */
+/** Capas de usuario de un DXF 2000, en orden (excluye la capa 0). */
+export function capasDxf(dxf: string): string[] {
+  return [...dxf.matchAll(/AcDbLayerTableRecord\n\s*2\n([^\n]+)\n/g)].map((m) => m[1]).filter((x) => x !== '0')
+}
+
+/** Vértices de cada LWPOLYLINE de una capa (DXF 2000): curvas, área y huellas de edificio. */
+export function lwpolilineasDxf(dxf: string, capa: string): { x: number; y: number }[][] {
+  const l = dxf.split(/\r?\n/)
+  const out: { x: number; y: number }[][] = []
+  let cur: { code: string; val: string }[] | null = null
+  const flush = () => {
+    if (!cur) return
+    if (cur.find((p) => p.code === '8')?.val === capa) {
+      const xs = cur.filter((p) => p.code === '10').map((p) => +p.val)
+      const ys = cur.filter((p) => p.code === '20').map((p) => +p.val)
+      out.push(xs.map((x, i) => ({ x, y: ys[i] })))
+    }
+    cur = null
+  }
+  for (let k = 0; k + 1 < l.length; k += 2) {
+    const code = l[k].trim()
+    const val = l[k + 1]
+    if (code === '0') {
+      flush()
+      cur = val === 'LWPOLYLINE' ? [] : null
+    } else if (cur) cur.push({ code, val })
+  }
+  flush()
+  return out
+}
+
 export function polilineasDxf(dxf: string, capa: string): { x: number; y: number }[][] {
   const l = dxf.split(/\r?\n/)
   const ents: { type: string; g: Map<string, string> }[] = []

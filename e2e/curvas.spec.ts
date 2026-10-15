@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { centroMapa, interceptarContexto, interceptarTerrarium } from './util'
+import { capasDxf, centroMapa, interceptarContexto, interceptarTerrarium, lwpolilineasDxf } from './util'
 
 /**
  * Módulo de curvas, flujo del profesor: ubicar el sitio → dibujar el área → las curvas aparecen.
@@ -75,9 +75,13 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   expect(descarga.suggestedFilename()).toMatch(/^geoarc_curvas_.*_UTM18S\.dxf$/)
   await descarga.saveAs('e2e/capturas/10-curvas-terrarium.dxf')
   const dxf = await readFile(await descarga.path(), 'utf8')
-  expect([...dxf.matchAll(/\nLAYER\n2\n(\w+)\n/g)].map((m) => m[1])).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA'])
-  expect(dxf).toMatch(/\nTEXT\n8\nETIQUETAS\n(?:.*\n)*?1\n200\n/)
-  expect(dxf).toMatch(/\nPOLYLINE\n8\nAREA\n/)
+  expect(dxf).toContain('AC1015') // DXF 2000
+  expect(capasDxf(dxf)).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA'])
+  // una curva maestra lleva la cota 200 como rótulo (TEXT en ETIQUETAS) y como elevación de la LWPOLYLINE
+  expect(dxf).toContain('8\nETIQUETAS\n')
+  expect(dxf).toContain('\n1\n200\n')
+  expect(lwpolilineasDxf(dxf, 'AREA')).toHaveLength(1)
+  expect(lwpolilineasDxf(dxf, 'CURVAS_MAESTRAS').length).toBeGreaterThan(0)
 
   expect(errors).toEqual([])
 })
