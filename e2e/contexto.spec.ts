@@ -17,9 +17,9 @@ test('curvas: contexto de OSM en el mapa (capas activables), en el DXF y guardad
   await dibujarArea(page, 120)
 
   await expect(page.getByTestId('contexto-info')).toContainText('3 edificaciones · 2 vías · OpenStreetMap (Overpass)')
-  await expect(page.getByTestId('contexto-alturas')).toHaveText(
-    'Alturas: 1 con altura en OSM · 1 por pisos (3 m c/u) · 1 sin dato (1 piso, 3 m).',
-  )
+  // resumen: 2 con altura conocida (height + pisos), 1 supuesta (sin dato → 3 m)
+  await expect(page.getByTestId('contexto-resumen-alturas')).toHaveText('3 edificaciones · 2 con altura conocida; 1 con altura supuesta (3 m).')
+  await expect(page.getByTestId('contexto-alturas')).toContainText('1 con altura en OSM · 1 por pisos (3 m c/u) · 1 sin dato')
   expect(n.overpass).toBe(1)
   expect(n.cuerpos[0]).toMatch(/way\["building"\]\(-38\.\d+,-72\.\d+,-38\.\d+,-72\.\d+\)/)
   const mapa = page.getByTestId('map')
@@ -44,10 +44,12 @@ test('curvas: contexto de OSM en el mapa (capas activables), en el DXF y guardad
   await descarga.saveAs('e2e/capturas/18-contexto.dxf')
   const dxf = await readFile(await descarga.path(), 'utf8')
   expect(dxf).toContain('AC1015')
-  expect(capasDxf(dxf)).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'EDIFICACIONES', 'VIALIDAD', 'ATRIBUCION', 'REFERENCIA'])
-  // 3 edificios rectangulares: 3 huellas LWPOLYLINE + por cada uno 4 muros (cuadriláteros) y 2 triángulos de techo
-  expect(lwpolilineasDxf(dxf, 'EDIFICACIONES')).toHaveLength(3)
-  expect((dxf.match(/8\nEDIFICACIONES\n100\nAcDbFace/g) || []).length).toBe(3 * 6)
+  expect(capasDxf(dxf)).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'EDIFICACIONES', 'EDIFICACIONES_SUPUESTAS', 'VIALIDAD', 'ATRIBUCION', 'REFERENCIA'])
+  // 2 con altura conocida en EDIFICACIONES, 1 supuesta en EDIFICACIONES_SUPUESTAS; cada edificio: 2 huella + 6 caras 3DFACE
+  expect(lwpolilineasDxf(dxf, 'EDIFICACIONES')).toHaveLength(2)
+  expect(lwpolilineasDxf(dxf, 'EDIFICACIONES_SUPUESTAS')).toHaveLength(1)
+  expect((dxf.match(/8\nEDIFICACIONES\n100\nAcDbFace/g) || []).length).toBe(2 * 6)
+  expect((dxf.match(/8\nEDIFICACIONES_SUPUESTAS\n100\nAcDbFace/g) || []).length).toBe(1 * 6)
   expect(polilineasDxf(dxf, 'VIALIDAD')).toHaveLength(2)
   expect(dxf).toContain('\n8\nATRIBUCION\n')
   expect(dxf).toContain('\n1\n\\U+00A9 OpenStreetMap contributors (ODbL)\n')

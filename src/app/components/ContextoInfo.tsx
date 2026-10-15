@@ -1,5 +1,5 @@
 import type { AlturaFuente } from '../../core/contexto/contexto'
-import { ATRIBUCION_OSM } from '../../core/contexto/contexto'
+import { ATRIBUCION_OSM, conteoAlturas } from '../../core/contexto/contexto'
 import { actions, useAppState } from '../store'
 import { Note } from './ui'
 
@@ -40,9 +40,19 @@ export function ContextoPanel() {
           <p className="text-xs text-slate-700" data-testid="contexto-info">
             {d.edificaciones.length} edificaciones · {d.vias.length} vías · {FUENTE[d.fuente]}, {new Date(d.fecha).toLocaleDateString('es-CL')}
           </p>
+          {d.edificaciones.length > 0 &&
+            (() => {
+              const c = conteoAlturas(d.edificaciones)
+              return (
+                <p className="text-[11px] text-slate-600" data-testid="contexto-resumen-alturas">
+                  {c.total} {c.total === 1 ? 'edificación' : 'edificaciones'} · {c.conocida} con altura conocida
+                  {c.supuesta > 0 && <>; {c.supuesta} con altura supuesta{c.supuesta3m ? ' (3 m)' : ''}</>}.
+                </p>
+              )
+            })()}
           {alturas.length > 0 && (
             <p className="text-[11px] text-slate-500" data-testid="contexto-alturas">
-              Alturas: {alturas.map(([k, n]) => `${n} ${ALTURA[k]}`).join(' · ')}.
+              Detalle: {alturas.map(([k, n]) => `${n} ${ALTURA[k]}`).join(' · ')}.
             </p>
           )}
           {ctx.aviso && <Note tone="warn">{ctx.aviso}</Note>}

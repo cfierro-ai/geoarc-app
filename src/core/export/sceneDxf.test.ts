@@ -148,6 +148,29 @@ describe('escena → DXF 2000', () => {
     expect(s).not.toContain('Origen local')
   })
 
+  it('alturas supuestas: los edificios sin dato de OSM van a la capa EDIFICACIONES_SUPUESTAS', () => {
+    const s = sceneToDxf({
+      frame,
+      indexInterval: 5,
+      contours: [],
+      area: { minX: 0, minY: 0, maxX: 100, maxY: 60 },
+      contexto: {
+        fuente: 'overpass',
+        fecha: '2026-10-15T12:00:00Z',
+        edificaciones: [
+          { id: 'c', anillo: [{ x: 10, y: 10 }, { x: 20, y: 10 }, { x: 20, y: 20 }, { x: 10, y: 20 }], huecos: [], altura: 12, alturaFuente: 'height' },
+          { id: 's', anillo: [{ x: 40, y: 10 }, { x: 50, y: 10 }, { x: 50, y: 20 }, { x: 40, y: 20 }], huecos: [], altura: 3, alturaFuente: 'defecto' },
+        ],
+        vias: [],
+      },
+    })
+    const { ents, layers } = parse(s)
+    expect(layers).toContain('EDIFICACIONES')
+    expect(layers).toContain('EDIFICACIONES_SUPUESTAS')
+    expect(onLayer(ents, 'LWPOLYLINE', 'EDIFICACIONES')).toHaveLength(1) // la conocida
+    expect(onLayer(ents, 'LWPOLYLINE', 'EDIFICACIONES_SUPUESTAS')).toHaveLength(1) // la supuesta
+  })
+
   it('estudio en plano (sin terreno): LOTE y REFERENCIA, sin capas de curvas', () => {
     const s = sceneToDxf({ frame, indexInterval: 5, contours: [], lot: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] })
     expect(parse(s).layers).toEqual(['LOTE', 'REFERENCIA'])

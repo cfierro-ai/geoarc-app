@@ -8,7 +8,7 @@ import { bbox } from '../envelope/polygon'
 import { Dxf2000Writer } from './dxf2000'
 import { murosEdificio, techoEdificio } from './solido'
 import { elementosReferencia, longitudEscala } from './referencia'
-import { ATRIBUCION_OSM, type Contexto, type Edificacion } from '../contexto/contexto'
+import { ATRIBUCION_OSM, esAlturaConocida, type Contexto, type Edificacion } from '../contexto/contexto'
 
 export interface SceneForDxf {
   frame: LocalFrame
@@ -79,8 +79,13 @@ export function sceneToDxf(s: SceneForDxf): string {
       const z = s.cotaBase ? s.cotaBase(p) : 0
       return Number.isFinite(z) ? z : 0
     }
-    w.addLayer('EDIFICACIONES', 9).addLayer('VIALIDAD', 6).addLayer('ATRIBUCION', 7)
-    for (const e of ctx.edificaciones) edificacionDxf(w, 'EDIFICACIONES', e, base, U)
+    const conocidas = ctx.edificaciones.filter((e) => esAlturaConocida(e.alturaFuente))
+    const supuestas = ctx.edificaciones.filter((e) => !esAlturaConocida(e.alturaFuente))
+    if (conocidas.length) w.addLayer('EDIFICACIONES', 9)
+    if (supuestas.length) w.addLayer('EDIFICACIONES_SUPUESTAS', 8) // altura supuesta (3 m por defecto o tesela)
+    w.addLayer('VIALIDAD', 6).addLayer('ATRIBUCION', 7)
+    for (const e of conocidas) edificacionDxf(w, 'EDIFICACIONES', e, base, U)
+    for (const e of supuestas) edificacionDxf(w, 'EDIFICACIONES_SUPUESTAS', e, base, U)
     for (const v of ctx.vias) w.polyline3d('VIALIDAD', v.linea.map((p): XYZ => ({ ...U(p), z: base(p) })), false)
     const b = s.area ?? bbox([...ctx.edificaciones.flatMap((e) => e.anillo), ...ctx.vias.flatMap((v) => v.linea)])
     w.text('ATRIBUCION', { ...U({ x: (b.minX + b.maxX) / 2, y: b.minY - 2 * th }), z: 0 }, th, ATRIBUCION_OSM)
