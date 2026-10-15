@@ -25,6 +25,13 @@ export interface SceneForDxf {
   contexto?: Contexto | null
   /** Cota del terreno para apoyar el contexto (por defecto 0), en coordenadas LOCALES. */
   cotaBase?: (p: XY) => number
+  /** Origen de las coordenadas XY: 'utm' (absolutas) o 'local' (esquina SO del área en 0,0). Z siempre es la cota real. */
+  origin?: 'utm' | 'local'
+}
+
+/** «Origen local = UTM 18S E 708617 N 5709343» para el TEXT de referencia en modo local. */
+export function origenLocalTexto(frame: LocalFrame, utm: XY): string {
+  return `Origen local = UTM ${frame.zone}${frame.south ? 'S' : 'N'} E ${Math.round(utm.x)} N ${Math.round(utm.y)}`
 }
 
 /**
@@ -38,7 +45,10 @@ export function sceneToDxf(s: SceneForDxf): string {
   const w = new Dxf2000Writer()
   if (s.contours.length || s.area) w.addLayer('CURVAS', 8).addLayer('CURVAS_MAESTRAS', 7).addLayer('ETIQUETAS', 7)
   if (s.area) w.addLayer('AREA', 3)
-  const U = (p: XY): XY => s.frame.toUTM(p)
+  // origen local: la esquina SO del área (o el sitio, si no hay área) pasa a (0,0). Z queda en cota real.
+  const local = s.origin === 'local'
+  const shift: XY = local ? (s.area ? { x: s.area.minX, y: s.area.minY } : { x: 0, y: 0 }) : { x: 0, y: 0 }
+  const U = (p: XY): XY => (local ? { x: p.x - shift.x, y: p.y - shift.y } : s.frame.toUTM(p))
 
   const span = s.area
     ? Math.max(rectSize(s.area).w, rectSize(s.area).h)
@@ -88,6 +98,12 @@ export function sceneToDxf(s: SceneForDxf): string {
         const cy = e.y0 + j * e.cell
         w.face3d('ENVOLVENTE', { ...U({ x: cx - h, y: cy - h }), z: t }, { ...U({ x: cx + h, y: cy - h }), z: t }, { ...U({ x: cx + h, y: cy + h }), z: t }, { ...U({ x: cx - h, y: cy + h }), z: t })
       }
+  }
+
+  if (local) {
+    w.addLayer('REFERENCIA', 7)
+    const origen = origenLocalTexto(s.frame, s.frame.toUTM(shift))
+    w.text('REFERENCIA', { ...U({ x: shift.x, y: shift.y - 2 * th }), z: 0 }, th, origen)
   }
   return w.toString()
 }

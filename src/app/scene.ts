@@ -2,7 +2,7 @@ import { createLocalFrame, type LocalFrame, type LonLat, type XY } from '../core
 import { rectFromCorners, squareRect, type Rect } from '../core/dem/area'
 import type { PerfilNormativo } from '../core/normativa/perfiles'
 import type { AlturaFuente, Contexto } from '../core/contexto/contexto'
-import { isSourceAvailable, type DemSourceId, type EdgeSetting, type TerrainMode } from './model'
+import { isSourceAvailable, type DemSourceId, type EdgeSetting, type ExportOrigin, type TerrainMode } from './model'
 
 /** v1 (GEO·ARC 0.1): área cuadrada centrada en el sitio, celda elegida a mano. */
 interface SceneFileV1 {
@@ -50,6 +50,8 @@ export interface SceneFileV4 extends Omit<SceneFileV3, 'version'> {
   version: 4
   areaPolygonLonLat: LonLat[] | null
   contexto: ContextoArchivo | null
+  /** Origen de las descargas; ausente en archivos v4 anteriores → 'local'. */
+  exportOrigin?: ExportOrigin
 }
 
 function contextoAArchivo(c: Contexto, fr: LocalFrame): ContextoArchivo {
@@ -92,6 +94,8 @@ export interface Scene {
   profileId: PerfilNormativo['id']
   maxHeight: number
   edges: EdgeSetting[]
+  /** Origen de las descargas (DXF, OBJ). */
+  exportOrigin: ExportOrigin
   /** Aviso para el usuario (p. ej. una fuente que ya no está disponible). */
   notice?: string
 }
@@ -113,6 +117,7 @@ export function serializeScene(s: Scene): SceneFileV4 {
     profileId: s.profileId,
     maxHeight: s.maxHeight,
     edges: s.edges,
+    exportOrigin: s.exportOrigin,
   }
 }
 
@@ -144,5 +149,6 @@ export function parseScene(text: string): Scene {
     profileId: f.profileId,
     maxHeight: f.maxHeight,
     edges: f.edges,
+    exportOrigin: (f.version === 4 && f.exportOrigin) || 'local',
   }
 }

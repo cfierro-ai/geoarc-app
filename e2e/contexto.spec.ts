@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { capasDxf, CONTEXTO_TEMUCO, dibujarArea, interceptarContexto, interceptarTerrarium, lwpolilineasDxf, polilineasDxf } from './util'
+import { CONTEXTO_TEMUCO, capasDxf, dibujarArea, interceptarContexto, interceptarMapaBase, interceptarTerrarium, lwpolilineasDxf, polilineasDxf } from './util'
 
 /**
  * Contexto del área (edificaciones y vías de OSM) sin red: Overpass responde un fixture (util.ts) y Terrarium un plano
@@ -12,6 +12,7 @@ test('curvas: contexto de OSM en el mapa (capas activables), en el DXF y guardad
   page.on('pageerror', (e) => errors.push(e.message))
   await interceptarTerrarium(page)
   const n = await interceptarContexto(page, CONTEXTO_TEMUCO)
+  await interceptarMapaBase(page)
   await page.goto('/curvas')
   await dibujarArea(page, 120)
 
@@ -36,11 +37,11 @@ test('curvas: contexto de OSM en el mapa (capas activables), en el DXF y guardad
 
   // DXF: EDIFICACIONES con la altura como espesor, VIALIDAD y la atribución de OSM
   await expect(page.getByTestId('descarga-contenido')).toContainText('edificaciones (con su altura) y vías')
-  const [descarga] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Descargar DXF (UTM)' }).click()])
+  const [descarga] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Descargar DXF 2000' }).click()])
   await descarga.saveAs('e2e/capturas/18-contexto.dxf')
   const dxf = await readFile(await descarga.path(), 'utf8')
   expect(dxf).toContain('AC1015')
-  expect(capasDxf(dxf)).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'EDIFICACIONES', 'VIALIDAD', 'ATRIBUCION'])
+  expect(capasDxf(dxf)).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'EDIFICACIONES', 'VIALIDAD', 'ATRIBUCION', 'REFERENCIA'])
   // 3 edificios rectangulares: 3 huellas LWPOLYLINE + por cada uno 4 muros (cuadriláteros) y 2 triángulos de techo
   expect(lwpolilineasDxf(dxf, 'EDIFICACIONES')).toHaveLength(3)
   expect((dxf.match(/8\nEDIFICACIONES\n100\nAcDbFace/g) || []).length).toBe(3 * 6)
@@ -69,6 +70,7 @@ test('sombras: las edificaciones del contexto se extruyen en la vista 3D', async
   page.on('pageerror', (e) => errors.push(e.message))
   await interceptarTerrarium(page)
   await interceptarContexto(page, CONTEXTO_TEMUCO)
+  await interceptarMapaBase(page)
   await page.goto('/curvas')
   await dibujarArea(page, 120)
   await expect(page.getByTestId('contexto-info')).toContainText('3 edificaciones')

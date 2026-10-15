@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { capasDxf, centroMapa, interceptarContexto, interceptarTerrarium, lwpolilineasDxf } from './util'
+import { capasDxf, centroMapa, interceptarContexto, interceptarMapaBase, interceptarTerrarium, lwpolilineasDxf } from './util'
 
 /**
  * Módulo de curvas, flujo del profesor: ubicar el sitio → dibujar el área → las curvas aparecen.
@@ -11,6 +11,7 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   page.on('pageerror', (e) => errors.push(e.message))
   const n = await interceptarTerrarium(page)
   await interceptarContexto(page)
+  await interceptarMapaBase(page)
   await page.goto('/curvas')
 
   // la fuente queda plegada en «Opciones avanzadas»; Copernicus se ve pero no se puede elegir
@@ -65,23 +66,37 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
 
   // sin edificaciones ni vías en el área, la descarga no las promete
   await expect(page.getByTestId('contexto-info')).toContainText('0 edificaciones · 0 vías')
-  await expect(page.getByTestId('descarga-contenido')).toHaveText(/^Curvas con cota y área\. Coordenadas UTM 18S/)
+  await expect(page.getByTestId('descarga-contenido')).toContainText('Curvas con cota y área. Formato DXF 2000')
 
-  // DXF: maestras cada 25 m (1 de 5) → la curva de 200 m, la del sitio, es maestra y lleva su cota
+  // DXF local (por defecto): nombre con _local, capa REFERENCIA con el origen en UTM, coordenadas pequeñas
   const [descarga] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Descargar DXF (UTM)' }).click(),
+    page.getByRole('button', { name: 'Descargar DXF 2000' }).click(),
   ])
-  expect(descarga.suggestedFilename()).toMatch(/^geoarc_curvas_.*_UTM18S\.dxf$/)
+  expect(descarga.suggestedFilename()).toMatch(/^geoarc_curvas_.*_UTM18S_local\.dxf$/)
   await descarga.saveAs('e2e/capturas/10-curvas-terrarium.dxf')
   const dxf = await readFile(await descarga.path(), 'utf8')
   expect(dxf).toContain('AC1015') // DXF 2000
-  expect(capasDxf(dxf)).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA'])
+  expect(capasDxf(dxf)).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'REFERENCIA'])
+  expect(dxf).toMatch(/Origen local = UTM 18S E \d+ N \d+/)
   // una curva maestra lleva la cota 200 como rótulo (TEXT en ETIQUETAS) y como elevación de la LWPOLYLINE
   expect(dxf).toContain('8\nETIQUETAS\n')
   expect(dxf).toContain('\n1\n200\n')
-  expect(lwpolilineasDxf(dxf, 'AREA')).toHaveLength(1)
+  const area = lwpolilineasDxf(dxf, 'AREA')
+  expect(area).toHaveLength(1)
+  expect(Math.min(...area[0].flatMap((p) => [p.x, p.y]))).toBeCloseTo(0, 2) // esquina SO en el origen
   expect(lwpolilineasDxf(dxf, 'CURVAS_MAESTRAS').length).toBeGreaterThan(0)
+
+  // cambiar a UTM: nombre con _UTM, coordenadas absolutas (centenares de miles) y sin TEXT de origen
+  await page.getByRole('radio', { name: /UTM absolutas/ }).check()
+  const [descargaUtm] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Descargar DXF 2000' }).click(),
+  ])
+  expect(descargaUtm.suggestedFilename()).toMatch(/_UTM18S_UTM\.dxf$/)
+  const dxfUtm = await readFile(await descargaUtm.path(), 'utf8')
+  expect(dxfUtm).not.toContain('Origen local')
+  expect(lwpolilineasDxf(dxfUtm, 'AREA')[0][0].x).toBeGreaterThan(100000)
 
   expect(errors).toEqual([])
 })

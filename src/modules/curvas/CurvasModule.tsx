@@ -20,9 +20,10 @@ import { Scene3D } from '../../app/components/Scene3D'
 import { SiteSection } from '../../app/components/SiteSection'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
 import { ContextoPanel } from '../../app/components/ContextoInfo'
+import { OrigenSelector } from '../../app/components/DescargaOrigen'
 import { btn, btnPrimary, input, ModulePanel, Note, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
-import { fmt, fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, type MapMode } from '../../app/model'
+import { fmt, fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, origenSufijo, type MapMode } from '../../app/model'
 import { actions, useAppState } from '../../app/store'
 
 /** Qué lleva el DXF, en una frase: «Curvas con cota, área, edificaciones (con su altura) y vías». */
@@ -44,6 +45,7 @@ export function CurvasModule() {
   const curvas = useAppState((s) => s.curvas)
   const contexto = useAppState((s) => s.contexto)
   const capas = useAppState((s) => s.capas)
+  const exportOrigin = useAppState((s) => s.exportOrigin)
   const ctxDatos = contexto.estado === 'listo' ? contexto.datos : null
   const [mode, setMode] = useState<MapMode>('none')
   const [areaCorner, setAreaCorner] = useState<XY | null>(null)
@@ -122,8 +124,10 @@ export function CurvasModule() {
       areaPolygon: polygon,
       contexto: ctxDatos,
       cotaBase: dem ? (p) => sampleClamped(dem, p.x, p.y) : undefined,
+      origin: exportOrigin,
     })
-    download(`geoarc_curvas_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_UTM${frame.zone}${frame.south ? 'S' : 'N'}.dxf`, dxf, 'application/dxf')
+    const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
+    download(`geoarc_curvas_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.dxf`, dxf, 'application/dxf')
   }
 
   const minConf = dem ? equidistanciaMinimaConfiable(dem.meta) : undefined
@@ -232,10 +236,11 @@ export function CurvasModule() {
 
         {dem && (
           <Section n={4} title="Descargar" done={false}>
-            <button className={btnPrimary} onClick={exportDxf}>Descargar DXF (UTM)</button>
+            <OrigenSelector />
+            <button className={btnPrimary} onClick={exportDxf}>Descargar DXF 2000</button>
             <p className="text-xs text-slate-500" data-testid="descarga-contenido">
-              {contenidoDxf(!!ctxDatos?.edificaciones.length, !!ctxDatos?.vias.length)}. Coordenadas UTM {frame.zone}
-              {frame.south ? 'S' : 'N'} (EPSG:{frame.epsg}), en metros.
+              {contenidoDxf(!!ctxDatos?.edificaciones.length, !!ctxDatos?.vias.length)}. Formato DXF 2000, en metros;{' '}
+              {exportOrigin === 'local' ? 'origen local (el archivo anota el origen en UTM).' : `UTM ${frame.zone}${frame.south ? 'S' : 'N'} (EPSG:${frame.epsg}).`}
             </p>
           </Section>
         )}

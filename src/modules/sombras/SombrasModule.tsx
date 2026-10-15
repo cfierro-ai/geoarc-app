@@ -16,7 +16,8 @@ import { SiteSection } from '../../app/components/SiteSection'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
 import { btn, btnPrimary, input, ModulePanel, Note, Num, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
-import { edgeColor, exampleLot, fmt, MAX_HEIGHT_COLOR, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
+import { edgeColor, exampleLot, fmt, MAX_HEIGHT_COLOR, origenSufijo, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
+import { OrigenSelector } from '../../app/components/DescargaOrigen'
 import { actions, gridCoversLot, useAppState } from '../../app/store'
 
 /** Grilla sobre la que se calcula y dibuja el estudio: plana (cota 0) o el terreno del sitio si cubre el lote. */
@@ -56,6 +57,7 @@ export function SombrasModule() {
   const sombras = useAppState((s) => s.sombras)
   const contexto = useAppState((s) => s.contexto)
   const capas = useAppState((s) => s.capas)
+  const exportOrigin = useAppState((s) => s.exportOrigin)
   const ctxDatos = contexto.estado === 'listo' ? contexto.datos : null
   const { terrainMode, lot, edges, maxHeight, didactic, exaggeration } = sombras
   const [mode, setMode] = useState<MapMode>('none')
@@ -148,8 +150,10 @@ export function SombrasModule() {
       envelope,
       contexto: ctxDatos,
       cotaBase: grid ? (p) => sampleClamped(grid, p.x, p.y) : undefined,
+      origin: exportOrigin,
     })
-    download(`geoarc_sombras_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_UTM${frame.zone}${frame.south ? 'S' : 'N'}.dxf`, dxf, 'application/dxf')
+    const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
+    download(`geoarc_sombras_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.dxf`, dxf, 'application/dxf')
   }
   const exportPng = () => {
     const c = document.querySelector<HTMLCanvasElement>('#geoarc-3d canvas, canvas#geoarc-3d')
@@ -307,8 +311,9 @@ export function SombrasModule() {
               </label>
             </div>
           )}
+          {envelope && <OrigenSelector />}
           <div className="flex flex-wrap gap-1 pt-1">
-            <button className={btn} onClick={exportDxf} disabled={!envelope}>Exportar DXF (UTM)</button>
+            <button className={btn} onClick={exportDxf} disabled={!envelope}>Descargar DXF 2000</button>
             <button className={btn} onClick={exportPng} disabled={!envelope || view !== '3d'} title="Disponible en la vista 3D">Imagen PNG</button>
           </div>
         </Section>

@@ -66,6 +66,15 @@ export function exampleLot(): XY[] {
 
 export type View = 'mapa' | '3d'
 
+/** Origen de las coordenadas de las descargas (DXF, OBJ). */
+export type ExportOrigin = 'local' | 'utm'
+export const EXPORT_ORIGINS: { id: ExportOrigin; label: string; hint: string }[] = [
+  { id: 'local', label: 'Local (esquina SO del área en 0,0)', hint: 'Coordenadas pequeñas, cómodas en CAD. El archivo anota el origen en UTM.' },
+  { id: 'utm', label: 'UTM absolutas', hint: 'Georreferenciado: coordenadas UTM del huso del sitio. Útil para SIG.' },
+]
+/** Sufijo del nombre de archivo según el origen: «_local» o «_UTM». */
+export const origenSufijo = (o: ExportOrigin) => (o === 'local' ? '_local' : '_UTM')
+
 /** Terreno del estudio de sombras. */
 export type TerrainMode = 'plano' | 'sitio'
 

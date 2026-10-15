@@ -119,6 +119,35 @@ describe('escena → DXF 2000', () => {
     expect(first(onLayer(ents, 'TEXT', 'ATRIBUCION')[0], 1)).toBe('\\U+00A9 OpenStreetMap contributors (ODbL)')
   })
 
+  it('origen local: coordenadas con la esquina SO del área en (0,0) y un TEXT con el origen en UTM', () => {
+    const area = { minX: 0, minY: 0, maxX: 100, maxY: 60 }
+    const s = sceneToDxf({
+      frame,
+      indexInterval: 5,
+      area,
+      origin: 'local',
+      contours: [{ level: 100, closed: false, points: [{ x: 0, y: 10 }, { x: 100, y: 10 }] }],
+    })
+    const { ents } = parse(s)
+    // AREA: esquinas locales (0,0)-(100,0)-(100,60)-(0,60), no UTM
+    const areaLw = onLayer(ents, 'LWPOLYLINE', 'AREA')[0]
+    expect(all(areaLw, 10)).toEqual(['0.000', '100.000', '100.000', '0.000'])
+    expect(all(areaLw, 20)).toEqual(['0.000', '0.000', '60.000', '60.000'])
+    // la cota de las curvas es la real (100), no se desplaza
+    expect(first(onLayer(ents, 'LWPOLYLINE', 'CURVAS_MAESTRAS')[0], 38)).toBe('100.000')
+    // TEXT de referencia con el origen en UTM absolutas
+    const ref = onLayer(ents, 'TEXT', 'REFERENCIA').map((t) => first(t, 1))
+    const origen = `Origen local = UTM 18S E ${Math.round(frame.originE)} N ${Math.round(frame.originN)}`
+    expect(ref).toContain(origen)
+  })
+
+  it('origen UTM (por defecto): las coordenadas son absolutas y no hay TEXT de origen', () => {
+    const s = sceneToDxf({ frame, indexInterval: 5, area: { minX: 0, minY: 0, maxX: 100, maxY: 60 }, contours: [] })
+    const areaLw = onLayer(parse(s).ents, 'LWPOLYLINE', 'AREA')[0]
+    expect(all(areaLw, 10)[0]).toBe(E(0))
+    expect(s).not.toContain('Origen local')
+  })
+
   it('estudio en plano (sin terreno): solo LOTE, sin capas de curvas', () => {
     const s = sceneToDxf({ frame, indexInterval: 5, contours: [], lot: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] })
     expect(parse(s).layers).toEqual(['LOTE'])
