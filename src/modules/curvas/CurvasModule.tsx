@@ -15,6 +15,7 @@ import {
   usoDelDato,
 } from '../../core/contours/escala'
 import { sceneToDxf } from '../../core/export/sceneDxf'
+import { sceneToObj } from '../../core/export/obj'
 import { MapView } from '../../app/components/MapView'
 import { Scene3D } from '../../app/components/Scene3D'
 import { SiteSection } from '../../app/components/SiteSection'
@@ -137,6 +138,21 @@ export function CurvasModule() {
     download(`geoarc_curvas_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.dxf`, dxf, 'application/dxf')
   }
 
+  const exportObj = () => {
+    if (!dem || !area) return
+    const obj = sceneToObj({
+      frame,
+      grid: dem,
+      area,
+      areaPolygon: polygon,
+      origin: exportOrigin,
+      edificaciones: ctxDatos?.edificaciones,
+      cotaBase: (p) => sampleClamped(dem, p.x, p.y),
+    })
+    const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
+    download(`geoarc_malla_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.obj`, obj, 'text/plain')
+  }
+
   const minConf = dem ? equidistanciaMinimaConfiable(dem.meta) : undefined
   const pre = dem && st ? preseleccionEquidistancia(dem.meta, st.max - st.min) : undefined
   const tooMany = (e: number) => !!st && contarNiveles(st.min, st.max, e) > MAX_NIVELES
@@ -257,7 +273,10 @@ export function CurvasModule() {
         {dem && (
           <Section n={4} title="Descargar" done={false}>
             <OrigenSelector />
-            <button className={btnPrimary} onClick={exportDxf}>Descargar DXF 2000</button>
+            <div className="flex flex-wrap gap-2">
+              <button className={btnPrimary} onClick={exportDxf}>Descargar DXF 2000</button>
+              <button className={btn} onClick={exportObj}>Descargar malla 3D (OBJ)</button>
+            </div>
             <p className="text-xs text-slate-500" data-testid="descarga-contenido">
               {contenidoDxf(!!ctxDatos?.edificaciones.length, !!ctxDatos?.vias.length)}. Formato DXF 2000, en metros;{' '}
               {exportOrigin === 'local' ? 'origen local (el archivo anota el origen en UTM).' : `UTM ${frame.zone}${frame.south ? 'S' : 'N'} (EPSG:${frame.epsg}).`}

@@ -49,6 +49,28 @@ test('curvas: contexto de OSM en el mapa (capas activables), en el DXF y guardad
   expect(dxf).toContain('\n8\nATRIBUCION\n')
   expect(dxf).toContain('\n1\n\\U+00A9 OpenStreetMap contributors (ODbL)\n')
 
+  // OBJ: malla 3D con grupos terreno y edificaciones, vértices y caras; cada edificio cerrado (arista en 2 caras)
+  const [obj] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Descargar malla 3D (OBJ)' }).click()])
+  await obj.saveAs('e2e/capturas/23-contexto.obj')
+  const malla = await readFile(await obj.path(), 'utf8')
+  expect(malla).toContain('g terreno')
+  expect(malla).toContain('g edificaciones')
+  expect((malla.match(/^v /gm) || []).length).toBeGreaterThan(10)
+  const edifFaces: [number, number, number][] = []
+  let grupo = ''
+  for (const l of malla.split('\n')) {
+    if (l.startsWith('g ')) grupo = l.slice(2).trim()
+    else if (l.startsWith('f ') && grupo === 'edificaciones') edifFaces.push(l.slice(2).trim().split(/\s+/).map(Number) as [number, number, number])
+  }
+  expect(edifFaces.length).toBeGreaterThan(0)
+  const edgeCount = new Map<string, number>()
+  for (const idx of edifFaces)
+    for (let i = 0; i < 3; i++) {
+      const [u, v] = [idx[i], idx[(i + 1) % 3]].sort((a, b) => a - b)
+      edgeCount.set(`${u}-${v}`, (edgeCount.get(`${u}-${v}`) ?? 0) + 1)
+    }
+  expect([...edgeCount.values()].every((n) => n === 2)).toBe(true) // sólidos cerrados
+
   // .geoarc: el contexto queda guardado; al abrirlo no se vuelve a pedir a Overpass
   const [guardado] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Guardar .geoarc' }).click()])
   const archivo = 'e2e/capturas/19-contexto.geoarc'
