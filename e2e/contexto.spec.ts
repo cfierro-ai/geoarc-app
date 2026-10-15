@@ -36,7 +36,10 @@ test('curvas: contexto de OSM en el mapa (capas activables), en el DXF y guardad
   await page.screenshot({ path: 'e2e/capturas/17-contexto-mapa.png' })
 
   // DXF: EDIFICACIONES con la altura como espesor, VIALIDAD y la atribución de OSM
-  await expect(page.getByTestId('descarga-contenido')).toContainText('edificaciones (con su altura) y vías')
+  await expect(page.getByTestId('tarjeta-dxf')).toContainText('3 edificaciones (con su altura)')
+  await expect(page.getByTestId('tarjeta-dxf')).toContainText('2 vías')
+  await page.getByTestId('tarjeta-dxf').scrollIntoViewIfNeeded()
+  await page.getByTestId('panel-curvas').screenshot({ path: 'e2e/capturas/24-descargar-tarjetas.png' })
   const [descarga] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Descargar DXF 2000' }).click()])
   await descarga.saveAs('e2e/capturas/18-contexto.dxf')
   const dxf = await readFile(await descarga.path(), 'utf8')

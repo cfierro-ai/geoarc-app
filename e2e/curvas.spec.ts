@@ -66,7 +66,11 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
 
   // sin edificaciones ni vías en el área, la descarga no las promete
   await expect(page.getByTestId('contexto-info')).toContainText('0 edificaciones · 0 vías')
-  await expect(page.getByTestId('descarga-contenido')).toContainText('Curvas con cota y área. Formato DXF 2000')
+  // tarjeta de descarga DXF: contenido real (curvas y área; sin edificaciones ni vías en esta área)
+  await expect(page.getByTestId('tarjeta-dxf')).toContainText('DXF 2000')
+  await expect(page.getByTestId('tarjeta-dxf')).toContainText('Curvas de nivel con cota')
+  await expect(page.getByTestId('tarjeta-dxf')).not.toContainText('edificaciones')
+  await expect(page.getByTestId('tarjeta-obj')).toContainText('Terreno recortado al área')
 
   // DXF local (por defecto): nombre con _local, capa REFERENCIA con el origen en UTM, coordenadas pequeñas
   const [descarga] = await Promise.all([

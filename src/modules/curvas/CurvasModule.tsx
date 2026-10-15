@@ -21,17 +21,24 @@ import { Scene3D } from '../../app/components/Scene3D'
 import { SiteSection } from '../../app/components/SiteSection'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
 import { ContextoPanel } from '../../app/components/ContextoInfo'
-import { OrigenSelector } from '../../app/components/DescargaOrigen'
+import { DescargaTarjetas } from '../../app/components/DescargaTarjetas'
 import { btn, btnPrimary, input, ModulePanel, Note, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
 import { useMeasure } from '../../app/useMeasure'
 import { fmt, fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, origenSufijo, type MapMode } from '../../app/model'
 import { actions, useAppState } from '../../app/store'
 
-/** Qué lleva el DXF, en una frase: «Curvas con cota, área, edificaciones (con su altura) y vías». */
-function contenidoDxf(edificaciones: boolean, vias: boolean): string {
-  const partes = ['Curvas con cota', 'área', ...(edificaciones ? ['edificaciones (con su altura)'] : []), ...(vias ? ['vías'] : [])]
-  return `${partes.slice(0, -1).join(', ')} y ${partes[partes.length - 1]}`
+/** Contenido REAL del archivo según el formato (solo lo que va de verdad): para las tarjetas de descarga. */
+function contenidoArchivo(fmt: 'dxf' | 'obj', poligono: boolean, nEdif: number, nVias: number): string[] {
+  if (fmt === 'obj')
+    return ['Terreno recortado al área', ...(nEdif ? [`${nEdif} ${nEdif === 1 ? 'edificio' : 'edificios'} (sólidos cerrados)`] : [])]
+  return [
+    'Curvas de nivel con cota',
+    poligono ? 'Área (polígono)' : 'Área (rectángulo)',
+    ...(nEdif ? [`${nEdif} ${nEdif === 1 ? 'edificación' : 'edificaciones'} (con su altura)`] : []),
+    ...(nVias ? [`${nVias} ${nVias === 1 ? 'vía' : 'vías'}`] : []),
+    'Referencia: escala, norte y metadatos',
+  ]
 }
 
 /**
@@ -272,15 +279,29 @@ export function CurvasModule() {
 
         {dem && (
           <Section n={4} title="Descargar" done={false}>
-            <OrigenSelector />
-            <div className="flex flex-wrap gap-2">
-              <button className={btnPrimary} onClick={exportDxf}>Descargar DXF 2000</button>
-              <button className={btn} onClick={exportObj}>Descargar malla 3D (OBJ)</button>
-            </div>
-            <p className="text-xs text-slate-500" data-testid="descarga-contenido">
-              {contenidoDxf(!!ctxDatos?.edificaciones.length, !!ctxDatos?.vias.length)}. Formato DXF 2000, en metros;{' '}
-              {exportOrigin === 'local' ? 'origen local (el archivo anota el origen en UTM).' : `UTM ${frame.zone}${frame.south ? 'S' : 'N'} (EPSG:${frame.epsg}).`}
-            </p>
+            <DescargaTarjetas
+              tamano={area ? fmtAreaSize(rectSize(area).w, rectSize(area).h) : undefined}
+              tarjetas={[
+                {
+                  titulo: 'Plano (DXF 2000)',
+                  formato: 'DXF 2000 (AC1015)',
+                  boton: 'Descargar DXF 2000',
+                  destacado: true,
+                  onDescargar: exportDxf,
+                  testId: 'tarjeta-dxf',
+                  contenido: contenidoArchivo('dxf', !!polygon, ctxDatos?.edificaciones.length ?? 0, ctxDatos?.vias.length ?? 0),
+                },
+                {
+                  titulo: 'Malla 3D (OBJ)',
+                  formato: 'OBJ (malla de triángulos)',
+                  boton: 'Descargar malla 3D (OBJ)',
+                  onDescargar: exportObj,
+                  disabled: !dem,
+                  testId: 'tarjeta-obj',
+                  contenido: contenidoArchivo('obj', !!polygon, ctxDatos?.edificaciones.length ?? 0, ctxDatos?.vias.length ?? 0),
+                },
+              ]}
+            />
           </Section>
         )}
       </ModulePanel>

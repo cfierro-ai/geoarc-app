@@ -10,6 +10,7 @@ import { area, cleanRing, facing, outwardNormal, toCCW } from '../../core/envelo
 import { clipIsolines } from '../../core/contours/clip'
 import { PERFILES, perfilVerificado, type EdgeRole } from '../../core/normativa/perfiles'
 import { sceneToDxf } from '../../core/export/sceneDxf'
+import { sceneToObj } from '../../core/export/obj'
 import { MapView } from '../../app/components/MapView'
 import { Scene3D } from '../../app/components/Scene3D'
 import { SiteSection } from '../../app/components/SiteSection'
@@ -17,7 +18,7 @@ import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/
 import { btn, btnPrimary, input, ModulePanel, Note, Num, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
 import { edgeColor, exampleLot, fmt, fmtNum, MAX_HEIGHT_COLOR, origenSufijo, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
-import { OrigenSelector } from '../../app/components/DescargaOrigen'
+import { DescargaTarjetas } from '../../app/components/DescargaTarjetas'
 import { useMeasure } from '../../app/useMeasure'
 import { actions, gridCoversLot, useAppState } from '../../app/store'
 
@@ -165,6 +166,20 @@ export function SombrasModule() {
     })
     const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
     download(`geoarc_sombras_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.dxf`, dxf, 'application/dxf')
+  }
+  const exportObj = () => {
+    if (!grid) return
+    const gr = { minX: grid.x0, minY: grid.y0, maxX: grid.x0 + (grid.nx - 1) * grid.cell, maxY: grid.y0 + (grid.ny - 1) * grid.cell }
+    const obj = sceneToObj({
+      frame,
+      grid,
+      area: gr,
+      origin: exportOrigin,
+      edificaciones: capas.edificaciones ? ctxDatos?.edificaciones : undefined,
+      cotaBase: (p) => sampleClamped(grid, p.x, p.y),
+    })
+    const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
+    download(`geoarc_sombras_malla_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.obj`, obj, 'text/plain')
   }
   const exportPng = () => {
     const c = document.querySelector<HTMLCanvasElement>('#geoarc-3d canvas, canvas#geoarc-3d')
@@ -334,9 +349,41 @@ export function SombrasModule() {
               </label>
             </div>
           )}
-          {envelope && <OrigenSelector />}
+          {envelope && (
+            <DescargaTarjetas
+              tarjetas={[
+                {
+                  titulo: 'Plano (DXF 2000)',
+                  formato: 'DXF 2000 (AC1015)',
+                  boton: 'Descargar DXF 2000',
+                  destacado: true,
+                  onDescargar: exportDxf,
+                  testId: 'tarjeta-dxf',
+                  contenido: [
+                    'Lote',
+                    'Envolvente (volumen máximo edificable)',
+                    ...(terrainMode === 'sitio' ? ['Curvas del terreno', 'Área'] : []),
+                    ...(ctxDatos?.edificaciones.length ? [`${ctxDatos.edificaciones.length} edificaciones (contexto)`] : []),
+                    ...(ctxDatos?.vias.length ? [`${ctxDatos.vias.length} vías`] : []),
+                    'Referencia: escala, norte y metadatos',
+                  ],
+                },
+                {
+                  titulo: 'Malla 3D (OBJ)',
+                  formato: 'OBJ (malla de triángulos)',
+                  boton: 'Descargar malla 3D (OBJ)',
+                  onDescargar: exportObj,
+                  disabled: !grid,
+                  testId: 'tarjeta-obj',
+                  contenido: [
+                    terrainMode === 'plano' ? 'Terreno plano (cota 0)' : 'Terreno del estudio',
+                    ...(capas.edificaciones && ctxDatos?.edificaciones.length ? [`${ctxDatos.edificaciones.length} edificios (sólidos)`] : []),
+                  ],
+                },
+              ]}
+            />
+          )}
           <div className="flex flex-wrap gap-1 pt-1">
-            <button className={btn} onClick={exportDxf} disabled={!envelope}>Descargar DXF 2000</button>
             <button className={btn} onClick={exportPng} disabled={!envelope || view !== '3d'} title="Disponible en la vista 3D">Imagen PNG</button>
           </div>
         </Section>
