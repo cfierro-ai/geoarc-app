@@ -340,3 +340,53 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
 - DXF de 193 KB (ezdxf: 0 errores, 0 arreglos); `.geoarc` de 44 KB con el contexto.
 - Estudio de sombras sobre el terreno del sitio, lote de ejemplo: 14 edificaciones del contexto en la vista 3D.
 - Producción (GitHub Pages) se publica desde `main`: este PR se verifica allí después de mezclarlo.
+
+## 2026-10-15 · PR #5 `v0.2-exportacion`: exportación para CAD/BIM
+
+### Diagnóstico de Chris (al abrir el DXF v0.2)
+- **AutoCAD LT:** abre bien.
+- **SketchUp:** importa pero no se ve nada. Exportando antes a DWG sí se ve, pero con los edificios **huecos**.
+- Causas identificadas:
+  1. R12 no declara unidades: SketchUp no sabía la escala y no mostraba la geometría.
+  2. Coordenadas UTM lejos del origen (cientos de miles de metros): incómodas en CAD y problemáticas para algunos
+     importadores.
+  3. Edificios como polilínea con **espesor** (código 39): AutoCAD lo extruye, pero no es geometría de caras; SketchUp
+     y otros lo ven hueco o no lo ven.
+
+### Decisiones
+1. **Escritor DXF 2000 (AC1015)** en `src/core/export/dxf2000.ts`, que reemplaza al R12 en todas las descargas:
+   - HEADER con `$ACADVER AC1015`, `$INSUNITS 6` (metros), `$MEASUREMENT 1`, `$HANDSEED`, `$EXTMIN/$EXTMAX`; secciones
+     CLASSES, TABLES (VPORT, LTYPE, LAYER, STYLE, VIEW, UCS, APPID, DIMSTYLE, BLOCK_RECORD), BLOCKS (*Model_Space,
+     *Paper_Space), ENTITIES y OBJECTS (diccionario raíz y layouts), con handles únicos y subclases. El andamiaje se
+     calcó de un AC1015 generado por ezdxf.
+   - Entidades: LWPOLYLINE con elevación (curvas, área, huellas), POLYLINE 3D (vías), 3DFACE (muros y techos de
+     edificios, caras de la envolvente), TEXT. Lo no ASCII va con el escape `\U+XXXX` (R2000 no admite UTF-8 en TEXT).
+   - Edificios como **sólidos**: muros (cuadriláteros) + techo triangulado con earcut (patios incluidos) + la huella
+     como LWPOLYLINE a la cota base. `src/core/export/solido.ts` arma el sólido cerrado (cada arista en 2 caras).
+   - Validación: ezdxf 1.4.4 `readfile` (estricto) + `audit` con **0 errores y 0 arreglos**, en la muestra, una escena
+     sintética y el DXF real de ~5 ha. Además se renderiza el DXF a PNG con el backend matplotlib de ezdxf para revisar
+     que la geometría se ve (curvas, área, edificios como cajas con techo, vías, REFERENCIA).
+2. **Origen de coordenadas** elegible en el paso Descargar: **Local (esquina SO del área en 0,0)** por defecto, o **UTM
+   absolutas**. La Z siempre es la cota real. En modo local, el archivo lleva un TEXT «Origen local = UTM <huso> E <x>
+   N <y>» (capa REFERENCIA) y el nombre de archivo termina en `_local` o `_UTM`. El `.geoarc` guarda la preferencia.
+3. **Capa REFERENCIA** (siempre): barra de escala (50/100/500 m según el área), flecha de norte de cuadrícula (+Y) y un
+   recuadro con «GEO·ARC · unidades: metros», el origen, «Elevación: <fuente · resolución>» y la fecha.
+4. **Herramienta Medir** en el mapa (ambos módulos): clics → distancia acumulada; doble clic → área en m² y ha; Esc
+   cancela. Cálculo en el marco métrico local (`longitudPolilinea`).
+5. **Malla 3D (OBJ)** (`src/core/export/obj.ts`): terreno recortado al área (solo triángulos con los 3 vértices dentro)
+   + edificios como sólidos cerrados; metros, mismo origen que el DXF; ejes x=este, y=norte, z=cota. Vértices
+   compartidos por coordenada (estanco). Render 3D con matplotlib revisado.
+6. **Paso Descargar** con dos tarjetas (Plano DXF 2000 / Malla 3D OBJ): formato, unidades, origen y el **contenido real**
+   del archivo; sin prometer lo que no está.
+7. **Alturas supuestas:** el panel distingue las edificaciones con altura conocida (OSM) de las supuestas (3 m); en el
+   DXF van a una capa EDIFICACIONES_SUPUESTAS; en 3D, en un tono más claro.
+
+### Pendiente de verificación por Chris (en su equipo, con los programas reales)
+- **AutoCAD LT:** abrir el DXF 2000 local y UTM; comprobar unidades (metros), capas, los edificios como sólidos y la
+  capa REFERENCIA (escala/norte/recuadro).
+- **SketchUp:** importar el DXF 2000 (ver que ahora sí se ve la geometría, con edificios no huecos) y el OBJ.
+- **Rhino:** abrir el DXF 2000 y el OBJ; verificar unidades y que los sólidos estén cerrados.
+
+### Ramas y PR
+- Trabajo apilado sobre `v0.2-simplificar` (PR #4), que seguía abierto. El PR #5 va con base en esa rama; cuando #4 se
+  mezcle a `main`, su base se puede cambiar a `main`.
