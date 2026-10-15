@@ -7,6 +7,7 @@ import { labelHeight, labelPlacements } from '../contours/labels'
 import { bbox } from '../envelope/polygon'
 import { Dxf2000Writer } from './dxf2000'
 import { murosEdificio, techoEdificio } from './solido'
+import { elementosReferencia, longitudEscala } from './referencia'
 import { ATRIBUCION_OSM, type Contexto, type Edificacion } from '../contexto/contexto'
 
 export interface SceneForDxf {
@@ -27,6 +28,10 @@ export interface SceneForDxf {
   cotaBase?: (p: XY) => number
   /** Origen de las coordenadas XY: 'utm' (absolutas) o 'local' (esquina SO del área en 0,0). Z siempre es la cota real. */
   origin?: 'utm' | 'local'
+  /** Fuente y resolución del terreno, para el recuadro de la capa REFERENCIA (p. ej. «Terrarium · ~30 m»). */
+  demInfo?: string
+  /** Fecha para el recuadro de REFERENCIA (por defecto, la de hoy en es-CL). */
+  fecha?: string
 }
 
 /** «Origen local = UTM 18S E 708617 N 5709343» para el TEXT de referencia en modo local. */
@@ -100,11 +105,27 @@ export function sceneToDxf(s: SceneForDxf): string {
       }
   }
 
-  if (local) {
-    w.addLayer('REFERENCIA', 7)
-    const origen = origenLocalTexto(s.frame, s.frame.toUTM(shift))
-    w.text('REFERENCIA', { ...U({ x: shift.x, y: shift.y - 2 * th }), z: 0 }, th, origen)
-  }
+  // capa REFERENCIA: barra de escala, flecha de norte de cuadrícula y recuadro con los metadatos
+  w.addLayer('REFERENCIA', 7)
+  const refPts: XY[] = [
+    ...s.contours.flatMap((c) => c.points),
+    ...(s.lot ?? []),
+    ...(s.contexto?.edificaciones.flatMap((e) => e.anillo) ?? []),
+    ...(s.contexto?.vias.flatMap((v) => v.linea) ?? []),
+  ]
+  const bb = s.area ?? (refPts.length ? bbox(refPts) : { minX: 0, minY: 0, maxX: 0, maxY: 0 })
+  const refSpan = Math.max(bb.maxX - bb.minX, bb.maxY - bb.minY) || 100
+  const refTh = th > 0 ? th : 1
+  const lineas = [
+    'GEO·ARC · unidades: metros',
+    local ? origenLocalTexto(s.frame, s.frame.toUTM({ x: shift.x, y: shift.y })) : `Origen: UTM ${s.frame.zone}${s.frame.south ? 'S' : 'N'} absolutas`,
+    ...(s.demInfo ? [`Elevación: ${s.demInfo}`] : []),
+    `Fecha: ${s.fecha ?? new Date().toLocaleDateString('es-CL')}`,
+  ]
+  const ref = elementosReferencia(bb.minX, bb.minY - 6 * refTh, refTh, longitudEscala(refSpan), lineas)
+  for (const seg of ref.segmentos) w.lwpolyline('REFERENCIA', seg.map(U), false)
+  for (const t of ref.textos) w.text('REFERENCIA', { ...U(t.p), z: 0 }, t.altura, t.texto)
+
   return w.toString()
 }
 

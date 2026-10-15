@@ -125,6 +125,7 @@ export function CurvasModule() {
       contexto: ctxDatos,
       cotaBase: dem ? (p) => sampleClamped(dem, p.x, p.y) : undefined,
       origin: exportOrigin,
+      demInfo: dem ? `${dem.meta.source} · ~${fmtNum(dem.meta.nominalResolutionM)} m` : undefined,
     })
     const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
     download(`geoarc_curvas_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.dxf`, dxf, 'application/dxf')

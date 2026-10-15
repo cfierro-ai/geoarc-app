@@ -46,7 +46,7 @@ describe('escena → DXF 2000', () => {
     })
     expect(s).toContain('AC1015')
     const { ents, layers } = parse(s)
-    expect(layers).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA'])
+    expect(layers).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'REFERENCIA'])
 
     // curva 100 → maestra (LWPOLYLINE con elevación 38 = 100); curva 101 → fina
     const maestra = onLayer(ents, 'LWPOLYLINE', 'CURVAS_MAESTRAS')
@@ -96,7 +96,7 @@ describe('escena → DXF 2000', () => {
       cotaBase: (p) => 200 + p.x / 10, // sube 1 m cada 10 m al este; cota 200 en el origen
     })
     const { ents, layers } = parse(s)
-    expect(layers).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'EDIFICACIONES', 'VIALIDAD', 'ATRIBUCION'])
+    expect(layers).toEqual(['CURVAS', 'CURVAS_MAESTRAS', 'ETIQUETAS', 'AREA', 'EDIFICACIONES', 'VIALIDAD', 'ATRIBUCION', 'REFERENCIA'])
 
     // huella: exterior + patio como LWPOLYLINE cerradas a la cota base más baja (x=10 → 201)
     const huellas = onLayer(ents, 'LWPOLYLINE', 'EDIFICACIONES')
@@ -148,10 +148,29 @@ describe('escena → DXF 2000', () => {
     expect(s).not.toContain('Origen local')
   })
 
-  it('estudio en plano (sin terreno): solo LOTE, sin capas de curvas', () => {
+  it('estudio en plano (sin terreno): LOTE y REFERENCIA, sin capas de curvas', () => {
     const s = sceneToDxf({ frame, indexInterval: 5, contours: [], lot: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] })
-    expect(parse(s).layers).toEqual(['LOTE'])
+    expect(parse(s).layers).toEqual(['LOTE', 'REFERENCIA'])
     // el archivo queda en ASCII puro
     expect([...s].every((c) => c.charCodeAt(0) < 128)).toBe(true)
+  })
+
+  it('REFERENCIA: barra de escala (100 m en ~5 ha), flecha de norte («N»), y recuadro con GEO·ARC, elevación y fecha', () => {
+    const s = sceneToDxf({
+      frame,
+      indexInterval: 5,
+      area: { minX: 0, minY: 0, maxX: 250, maxY: 190 },
+      contours: [],
+      demInfo: 'Terrarium (AWS Terrain Tiles) · ~30 m',
+      fecha: '2026-10-15',
+    })
+    const ref = onLayer(parse(s).ents, 'TEXT', 'REFERENCIA').map((t) => first(t, 1))
+    expect(ref).toContain('100 m') // ~5 ha → barra de 100 m
+    expect(ref).toContain('N')
+    expect(ref).toContain('GEO\\U+00B7ARC \\U+00B7 unidades: metros') // «·» escapado a ASCII
+    expect(ref).toContain('Elevaci\\U+00F3n: Terrarium (AWS Terrain Tiles) \\U+00B7 ~30 m')
+    expect(ref).toContain('Fecha: 2026-10-15')
+    // la barra de escala es una LWPOLYLINE en REFERENCIA
+    expect(onLayer(parse(s).ents, 'LWPOLYLINE', 'REFERENCIA').length).toBeGreaterThan(0)
   })
 })

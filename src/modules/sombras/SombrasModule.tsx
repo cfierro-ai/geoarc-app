@@ -16,7 +16,7 @@ import { SiteSection } from '../../app/components/SiteSection'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
 import { btn, btnPrimary, input, ModulePanel, Note, Num, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
-import { edgeColor, exampleLot, fmt, MAX_HEIGHT_COLOR, origenSufijo, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
+import { edgeColor, exampleLot, fmt, fmtNum, MAX_HEIGHT_COLOR, origenSufijo, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
 import { OrigenSelector } from '../../app/components/DescargaOrigen'
 import { actions, gridCoversLot, useAppState } from '../../app/store'
 
@@ -151,6 +151,7 @@ export function SombrasModule() {
       contexto: ctxDatos,
       cotaBase: grid ? (p) => sampleClamped(grid, p.x, p.y) : undefined,
       origin: exportOrigin,
+      demInfo: grid ? `${grid.meta.source} · ~${fmtNum(grid.meta.nominalResolutionM)} m` : undefined,
     })
     const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
     download(`geoarc_sombras_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.dxf`, dxf, 'application/dxf')
