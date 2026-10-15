@@ -18,6 +18,7 @@ import { btn, btnPrimary, input, ModulePanel, Note, Num, Section } from '../../a
 import { download, useEscape } from '../../app/util'
 import { edgeColor, exampleLot, fmt, fmtNum, MAX_HEIGHT_COLOR, origenSufijo, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
 import { OrigenSelector } from '../../app/components/DescargaOrigen'
+import { useMeasure } from '../../app/useMeasure'
 import { actions, gridCoversLot, useAppState } from '../../app/store'
 
 /** Grilla sobre la que se calcula y dibuja el estudio: plana (cota 0) o el terreno del sitio si cubre el lote. */
@@ -63,6 +64,7 @@ export function SombrasModule() {
   const [mode, setMode] = useState<MapMode>('none')
   const [draft, setDraft] = useState<XY[]>([])
   const [selectedEdge, setSelectedEdge] = useState<number | null>(null)
+  const measure = useMeasure()
   const frame = useMemo(() => createLocalFrame(site), [site])
   const profile = PERFILES.find((p) => p.id === sombras.profileId) ?? PERFILES[0]
 
@@ -91,10 +93,11 @@ export function SombrasModule() {
     return { contours: areaPolygon ? clipIsolines(all, areaPolygon) : all, indexInterval: 5 * e }
   }, [terrainMode, grid, areaPolygon])
 
-  const cancel = useCallback(() => {
+  const cancel = () => {
     setMode('none')
     setDraft([])
-  }, [])
+    measure.reset()
+  }
   useEscape(mode, cancel)
 
   const finishLot = () => {
@@ -105,12 +108,19 @@ export function SombrasModule() {
       setSelectedEdge(null)
     }
   }
+  const finishDraft = () => (mode === 'medir' ? measure.close() : finishLot())
+  const startMedir = () => {
+    cancel()
+    setMode('medir')
+    actions.setSombras({ view: 'mapa' })
+  }
 
   const onPick = (p: LonLat) => {
     if (mode === 'site') {
       actions.setSite(p)
       setMode('none')
     } else if (mode === 'lot') setDraft((d) => [...d, frame.toLocal(p)])
+    else if (mode === 'medir') measure.add(frame.toLocal(p))
   }
 
   const lotInfo = useMemo(() => {
@@ -206,7 +216,19 @@ export function SombrasModule() {
             )}
             <button className={btn} onClick={() => (void actions.setLot(exampleLot()), setSelectedEdge(null))}>Lote de ejemplo</button>
             {lot.length > 0 && <button className={btn} onClick={actions.clearLot}>Borrar</button>}
+            {mode !== 'medir' ? (
+              <button className={btn} onClick={startMedir}>Medir</button>
+            ) : (
+              <button className={btn} onClick={cancel}>Terminar de medir</button>
+            )}
           </div>
+          {mode === 'medir' && (
+            <p className="text-xs text-slate-700" data-testid="medida-info">
+              {measure.area !== null
+                ? `Área: ${fmt(measure.area)} m² · ${fmt(measure.area / 10_000, 2)} ha`
+                : `Distancia: ${fmt(measure.distancia)} m (${measure.pts.length} ${measure.pts.length === 1 ? 'punto' : 'puntos'}) · doble clic: cerrar`}
+            </p>
+          )}
           <LotDimensions />
           {lotInfo && (
             <p className="text-xs text-slate-600" data-testid="lot-info">
@@ -334,11 +356,13 @@ export function SombrasModule() {
             dataGrid={null}
             lot={lot}
             draft={draft}
+            medida={measure.pts}
+            medidaCerrada={measure.cerrada}
             contexto={ctxDatos}
             capas={capas}
             mode={mode}
             onPick={onPick}
-            onFinishDraft={finishLot}
+            onFinishDraft={finishDraft}
             visible={view === 'mapa'}
           />
         </div>

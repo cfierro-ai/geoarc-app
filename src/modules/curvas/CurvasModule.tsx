@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createLocalFrame, type LonLat, type XY } from '../../core/geo/local'
 import { gridStats, sampleClamped } from '../../core/dem/grid'
 import { areaProblem, autoCell, dataGridLines, gridCells, polygonProblem, rectFromCorners, rectSize } from '../../core/dem/area'
@@ -23,6 +23,7 @@ import { ContextoPanel } from '../../app/components/ContextoInfo'
 import { OrigenSelector } from '../../app/components/DescargaOrigen'
 import { btn, btnPrimary, input, ModulePanel, Note, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
+import { useMeasure } from '../../app/useMeasure'
 import { fmt, fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, origenSufijo, type MapMode } from '../../app/model'
 import { actions, useAppState } from '../../app/store'
 
@@ -52,6 +53,7 @@ export function CurvasModule() {
   /** Vértices del polígono en dibujo y, si al cerrarlo no sirve, por qué. */
   const [polyDraft, setPolyDraft] = useState<XY[]>([])
   const [polyProblem, setPolyProblem] = useState<string | null>(null)
+  const measure = useMeasure()
   const frame = useMemo(() => createLocalFrame(site), [site])
   const { area, polygon, dem } = terrain
   const { contourInterval, indexEvery, showDataGrid } = curvas
@@ -72,12 +74,13 @@ export function CurvasModule() {
     return lines.flatMap((l) => clipPolyline([l.a, l.b], false, polygon).map((t) => ({ a: t[0], b: t[t.length - 1] })))
   }, [showDataGrid, dem, area, polygon])
 
-  const cancel = useCallback(() => {
+  const cancel = () => {
     setMode('none')
     setAreaCorner(null)
     setPolyDraft([])
     setPolyProblem(null)
-  }, [])
+    measure.reset()
+  }
 
   const finishPolygon = () => {
     const ring = cleanRing(polyDraft)
@@ -91,11 +94,12 @@ export function CurvasModule() {
     void actions.setAreaPolygon(ring)
   }
 
-  const startDrawing = (m: 'area' | 'poligono') => {
+  const startDrawing = (m: 'area' | 'poligono' | 'medir') => {
     cancel()
     setMode(m)
     actions.setCurvas({ view: 'mapa' })
   }
+  const finishDraft = () => (mode === 'medir' ? measure.close() : finishPolygon())
   useEscape(mode, cancel)
 
   const onPick = (p: LonLat) => {
@@ -112,6 +116,8 @@ export function CurvasModule() {
     } else if (mode === 'poligono') {
       setPolyProblem(null)
       setPolyDraft((d) => [...d, frame.toLocal(p)])
+    } else if (mode === 'medir') {
+      measure.add(frame.toLocal(p))
     }
   }
 
@@ -158,10 +164,23 @@ export function CurvasModule() {
               </div>
               {polyProblem && <Note tone="warn">{polyProblem}</Note>}
             </>
+          ) : mode === 'medir' ? (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <button className={btn} onClick={cancel}>Terminar</button>
+                <span className="text-xs text-slate-500">Clic: punto · doble clic: cerrar (área) · Esc: salir</span>
+              </div>
+              <p className="text-xs text-slate-700" data-testid="medida-info">
+                {measure.area !== null
+                  ? `Área: ${fmt(measure.area)} m² · ${fmt(measure.area / 10_000, 2)} ha`
+                  : `Distancia: ${fmt(measure.distancia)} m (${measure.pts.length} ${measure.pts.length === 1 ? 'punto' : 'puntos'})`}
+              </p>
+            </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               <button className={area ? btn : btnPrimary} onClick={() => startDrawing('area')}>Dibujar rectángulo</button>
               <button className={btn} onClick={() => startDrawing('poligono')}>Dibujar polígono</button>
+              <button className={btn} onClick={() => startDrawing('medir')}>Medir</button>
               {!area && <span className="text-xs text-slate-500">El terreno se descarga solo al cerrar el área.</span>}
             </div>
           )}
@@ -261,11 +280,13 @@ export function CurvasModule() {
             dataGrid={dataGrid}
             lot={[]}
             draft={polyDraft}
+            medida={measure.pts}
+            medidaCerrada={measure.cerrada}
             contexto={ctxDatos}
             capas={capas}
             mode={mode}
             onPick={onPick}
-            onFinishDraft={finishPolygon}
+            onFinishDraft={finishDraft}
             visible={view === 'mapa'}
           />
         </div>

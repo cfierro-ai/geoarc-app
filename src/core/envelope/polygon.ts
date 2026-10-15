@@ -52,6 +52,13 @@ export function facing(n: XY): string {
   return RUMBOS[Math.round((((az % 360) + 360) % 360) / 45) % 8]
 }
 
+/** Distancia acumulada a lo largo de una polilínea abierta (suma de los lados), en las unidades de las coordenadas. */
+export function longitudPolilinea(pts: XY[]): number {
+  let d = 0
+  for (let k = 1; k < pts.length; k++) d += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y)
+  return d
+}
+
 /** Quita vértices repetidos de un anillo dibujado en el mapa (el doble clic agrega dos clics en el mismo punto). */
 export function cleanRing(pts: XY[], tol = 0.3): XY[] {
   const out: XY[] = []

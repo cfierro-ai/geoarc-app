@@ -21,7 +21,8 @@ import { areaProblem, rectCorners, rectFromCorners, rectSize, type Rect } from '
 import type { Contexto } from '../../core/contexto/contexto'
 import type { CapasState } from '../store'
 // OpenFreeMap, estilo vectorial «Liberty». Sus atribuciones vienen en el TileJSON y MapLibre las muestra.
-import { edgeColor, fmtAreaSize, OFM_STYLE_URL, type MapMode } from '../model'
+import { edgeColor, fmt, fmtAreaSize, OFM_STYLE_URL, type MapMode } from '../model'
+import { area as polyArea, longitudPolilinea } from '../../core/envelope/polygon'
 
 type Basemap = 'ofm' | 'osm' | 'sat'
 const BASEMAPS: { id: Basemap; label: string; title: string }[] = [
@@ -90,6 +91,9 @@ interface Props {
   dataGrid: { a: XY; b: XY }[] | null
   lot: XY[]
   draft: XY[]
+  /** Poligonal de medición (vértices en el marco local) y si se cerró (doble clic → área). */
+  medida: XY[]
+  medidaCerrada: boolean
   /** Edificaciones y vías de OSM, y qué capas se ven. */
   contexto: Contexto | null
   capas: CapasState
@@ -106,6 +110,18 @@ function ringFeature(ring: XY[], ll: (q: XY) => number[]): Feature {
   return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[...c, c[0]]] } }
 }
 
+/** Texto del banner en modo medir: distancia acumulada (con el tramo al cursor) y, al cerrar, el área. */
+function medidaBanner(medida: XY[], cerrada: boolean, hover: XY | null): string {
+  if (cerrada && medida.length > 2) {
+    const a = polyArea(medida)
+    return `Área: ${fmt(a)} m² · ${fmt(a / 10_000, 2)} ha · Esc: salir`
+  }
+  const pts = medida.length && hover ? [...medida, hover] : medida
+  const d = longitudPolilinea(pts)
+  if (medida.length === 0) return 'Clic: primer punto a medir · Esc: cancelar'
+  return `Distancia: ${fmt(d)} m · clic: otro punto · doble clic: cerrar (área) · Esc: salir`
+}
+
 export function MapView(p: Props) {
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<MlMap | null>(null)
@@ -113,6 +129,8 @@ export function MapView(p: Props) {
   const [ready, setReady] = useState(false)
   /** Rectángulo que sigue al cursor mientras se dibuja el área. */
   const [hoverRect, setHoverRect] = useState<Rect | null>(null)
+  /** Punto del cursor mientras se mide (para la distancia provisional). */
+  const [medidaHover, setMedidaHover] = useState<XY | null>(null)
   const [basemap, setBasemap] = useState<Basemap>('ofm')
   /** Capas del estilo de OpenFreeMap; vacío si no cargó (solo OSM raster); null mientras se carga. */
   const [vectorIds, setVectorIds] = useState<string[] | null>(null)
@@ -198,6 +216,10 @@ export function MapView(p: Props) {
       m.addLayer({ id: 'lot-edges', type: 'line', source: 'lot', filter: ['==', '$type', 'LineString'], paint: { 'line-color': ['get', 'color'], 'line-width': 3.5 } })
       m.addLayer({ id: 'draft-line', type: 'line', source: 'draft', paint: { 'line-color': '#0ea5e9', 'line-width': 2, 'line-dasharray': [1, 1] } })
       m.addLayer({ id: 'draft-pts', type: 'circle', source: 'draft', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 4, 'circle-color': '#0ea5e9', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } })
+      m.addSource('medida', { type: 'geojson', data: empty })
+      m.addLayer({ id: 'medida-fill', type: 'fill', source: 'medida', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.1 } })
+      m.addLayer({ id: 'medida-line', type: 'line', source: 'medida', filter: ['==', '$type', 'LineString'], paint: { 'line-color': '#7c3aed', 'line-width': 2 } })
+      m.addLayer({ id: 'medida-pts', type: 'circle', source: 'medida', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 3.5, 'circle-color': '#7c3aed', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } })
       setReady(true)
     })
     // mapa en reposo (datos procesados y dibujados): señal para las capturas de e2e
@@ -209,11 +231,12 @@ export function MapView(p: Props) {
     // vista previa del área: el rectángulo sigue al cursor desde la primera esquina
     m.on('mousemove', (e: MapMouseEvent) => {
       const c = cb.current
-      if (c.mode !== 'area' || !c.areaCorner) return
-      setHoverRect(rectFromCorners(c.areaCorner, c.frame.toLocal({ lon: e.lngLat.lng, lat: e.lngLat.lat })))
+      const q = c.frame.toLocal({ lon: e.lngLat.lng, lat: e.lngLat.lat })
+      if (c.mode === 'area' && c.areaCorner) setHoverRect(rectFromCorners(c.areaCorner, q))
+      else if (c.mode === 'medir' && c.medida.length > 0 && !c.medidaCerrada) setMedidaHover(q)
     })
     m.on('dblclick', (e: MapMouseEvent) => {
-      if (cb.current.mode === 'lot' || cb.current.mode === 'poligono') {
+      if (cb.current.mode === 'lot' || cb.current.mode === 'poligono' || cb.current.mode === 'medir') {
         e.preventDefault()
         cb.current.onFinishDraft()
       }
@@ -239,7 +262,7 @@ export function MapView(p: Props) {
     if (!m || !ready) return
     m.getCanvas().style.cursor = p.mode === 'none' ? '' : 'crosshair'
     // dos clics seguidos (lote, polígono o esquinas del área) no deben hacer zoom
-    if (p.mode === 'lot' || p.mode === 'area' || p.mode === 'poligono') m.doubleClickZoom.disable()
+    if (p.mode === 'lot' || p.mode === 'area' || p.mode === 'poligono' || p.mode === 'medir') m.doubleClickZoom.disable()
     else m.doubleClickZoom.enable()
   }, [p.mode, ready])
 
@@ -247,6 +270,9 @@ export function MapView(p: Props) {
   useEffect(() => {
     if (p.mode !== 'area' || !p.areaCorner) setHoverRect(null)
   }, [p.mode, p.areaCorner])
+  useEffect(() => {
+    if (p.mode !== 'medir') setMedidaHover(null)
+  }, [p.mode])
 
   useEffect(() => {
     const m = map.current
@@ -361,6 +387,21 @@ export function MapView(p: Props) {
     ;(m.getSource('draft') as GeoJSONSource).setData({ type: 'FeatureCollection', features: dr })
   }, [p.frame, p.area, p.areaPolygon, p.contours, p.indexInterval, p.lot, p.draft, ready])
 
+  // poligonal de medición: puntos, línea (con el tramo provisional al cursor) y, al cerrar, relleno del área
+  useEffect(() => {
+    const m = map.current
+    if (!m || !ready) return
+    const ll = (q: XY) => {
+      const g = p.frame.toLonLat(q)
+      return [g.lon, g.lat]
+    }
+    const linePts = p.medida.length && !p.medidaCerrada && medidaHover ? [...p.medida, medidaHover] : p.medida
+    const fs: Feature[] = p.medida.map((q) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: ll(q) } }))
+    if (p.medidaCerrada && p.medida.length > 2) fs.push(ringFeature(p.medida, ll))
+    else if (linePts.length > 1) fs.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: linePts.map(ll) } })
+    ;(m.getSource('medida') as GeoJSONSource).setData({ type: 'FeatureCollection', features: fs })
+  }, [p.frame, p.medida, p.medidaCerrada, medidaHover, ready])
+
   const hoverProblem = hoverRect && areaProblem(hoverRect)
   const banner =
     p.mode === 'site'
@@ -369,6 +410,8 @@ export function MapView(p: Props) {
         ? 'Clic: agregar vértice · Doble clic: cerrar lote'
         : p.mode === 'poligono'
           ? 'Clic: agregar vértice · Doble clic: cerrar el polígono · Esc: cancelar'
+        : p.mode === 'medir'
+          ? medidaBanner(p.medida, p.medidaCerrada, medidaHover)
         : p.mode === 'area'
           ? !p.areaCorner
             ? 'Clic: primera esquina del área · Esc: cancelar'
