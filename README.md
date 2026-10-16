@@ -10,14 +10,15 @@ entre ambos.
 - **Curvas de nivel** (`/curvas`): ubica el sitio y dibuja el área en el mapa, como rectángulo (dos clics) o polígono
   (clics y doble clic). El terreno y el contexto (edificaciones y vías de OpenStreetMap) se descargan solos y aparecen
   las curvas. El panel dice para qué sirve el dato («dato de ~30 m: útil para ladera y barrio, no para el lote») y
-  preselecciona la equidistancia según la resolución y el desnivel. Descarga un **DXF 2000** (curvas con cota, área, edificaciones y vías, con una capa de referencia: escala, norte y
-  metadatos) o una **malla 3D OBJ** (terreno recortado al área + edificios como sólidos). Las coordenadas van con
-  origen local (esquina SO del área en 0,0; cómodo en CAD) o UTM absolutas. Además, una herramienta para **medir**
-  distancias y áreas en el mapa.
+  preselecciona la equidistancia según la resolución y el desnivel. Una tarjeta por formato de descarga, todas visibles:
+  **Plano (DXF 2000)** (curvas con cota, área, edificaciones y vías, con una capa de referencia: escala, norte y
+  metadatos), **Modelo 3D (GLB)** con textura satelital o de mapa —para SketchUp Pro, Blender y visores 3D, sin instalar
+  nada— y **Malla (OBJ, sin textura)**. Las coordenadas van con origen local (esquina SO del área en 0,0; cómodo en CAD)
+  o UTM absolutas. Además, una herramienta para **medir** distancias y áreas en el mapa.
 - **Estudio de sombras** (`/sombras`): define el lote (dibujado, de ejemplo o por ancho, fondo y giro) y aplica
   rasantes, distanciamientos y altura máxima. Se calcula en plano (cota 0, por defecto) o sobre el terreno del sitio.
   Muestra qué restricción manda en cada punto y la altura máxima alcanzable; vista 3D con las edificaciones del
-  contexto, y descargas DXF 2000, malla OBJ y PNG.
+  contexto, y descargas DXF 2000, modelo GLB, malla OBJ y PNG.
 
 ## Uso local
 

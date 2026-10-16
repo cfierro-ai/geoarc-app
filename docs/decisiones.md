@@ -422,3 +422,46 @@ sobre la misma rama `v0.2-exportacion`.
 
 Cierre: unit + typecheck + e2e completo; ezdxf (`readfile` + `audit`) sobre el DXF real: 0 errores, 0 arreglos; el código
 70 de los 3DFACE del techo es válido. Se dejan de nuevo los tres archivos de muestra (curvas, área-polígono, contexto).
+
+## 2026-10-16 · PR #6 `v0.2-glb`: modelo 3D GLB con textura
+
+Descarga **Modelo 3D (GLB)** con textura para SketchUp Pro, Blender y visores 3D sin instalar nada. Premisa de
+interfaz: **una tarjeta por formato de descarga, todas visibles** (DXF 2000, GLB, OBJ), sin opciones escondidas. Un
+commit por punto.
+
+1. **Exportador GLB** (`glb.ts`, `GLTFExporter` de three, binario): terreno (malla recortada al área, con la densidad
+   elegida, normales y UV), edificios como sólidos (los supuestos en gris más claro), vías y contorno del área como
+   líneas (mode LINES). Metros; ejes Z-arriba→Y-arriba `(x,y,z)→(x,z,−y)`; origen local/UTM como el DXF.
+   `asset.generator = "GEO·ARC"` y `asset.copyright` (textura + OSM), inyectados en el chunk JSON. `glbCore.ts` puro.
+2. **Textura**: Satelital (Esri) / Mapa (OSM) / Sin textura (por defecto satelital). Mosaico de teselas del bbox del
+   área + margen; zoom para que el lado mayor quede entre 2048 y 4096 px (tope: el zoom máximo con imagen de la fuente).
+   UV por vértice (lon/lat → píxel del mosaico, Web Mercator) SIN reproyectar la imagen. Si una tesela falla, se rellena
+   en gris y se avisa; no se aborta.
+3. **Paso Descargar** con una tarjeta por formato; la del GLB lleva el selector de textura con atribución y una nota
+   permanente «Se abre con: SketchUp Pro…» (en una sola constante `GLB_NOTA_APERTURA`).
+4. **Verificación**: el GLB se abre con three (GLTFLoader) en Playwright headless y se renderiza (captura); el validador
+   `gltf-validator` da **0 errores** sobre los archivos de muestra.
+5. **e2e sin red**: teselas de textura simuladas (un color por tesela); el GLB descargado tiene magic «glTF», la malla,
+   la textura embebida (JPEG) y `asset.copyright`.
+6. Docs.
+
+**Decisiones y supuestos a revisar (Chris):**
+- **Rama apilada sobre `v0.2-exportacion` (PR #5), no sobre `main`.** Chris pidió «sobre main», pero #4 y #5 seguían
+  abiertos y `main` no tiene el escritor de exportación ni el paso Descargar. Cuando se mezclen #4 y #5, la base de #6
+  se puede cambiar a `main`.
+- **Densidad «del punto 9» (Gruesa/Media/Fina):** no existía en el código ni en el backlog. Se creó aquí como
+  infraestructura compartida (GLB y OBJ): objetivo de celdas en el lado mayor del área — Gruesa 60, Media 120, Fina 240
+  (en `DENSIDADES`, `src/app/model.ts`, fácil de ajustar). Si el «punto 9» venía de otro plan, revisar los valores.
+- **Calidad JPEG de la textura:** se pidió JPEG calidad 85, pero GLTFExporter re-codifica la textura y, para un
+  `HTMLCanvasElement`, no acepta el parámetro de calidad: usa el valor por defecto del navegador (~0,92). Queda JPEG
+  (chico), no PNG, pero algo por encima del 85. Para fijar 85 habría que re-codificar la imagen y re-empacar el GLB.
+- **Términos de uso de Esri (World Imagery) para textura incrustada:** la app ya usa Esri como mapa base (igual que
+  OpenStreetMap satelital en muchas herramientas docentes), pero **incrustar** las teselas satelitales dentro de un GLB
+  que el alumno se lleva puede tener condiciones distintas a mostrarlas en pantalla. **Pendiente de verificar** los
+  términos de Esri/ArcGIS Online para este uso; si no aplica, dejar «Mapa (OSM)» como textura por defecto o solo
+  satelital para visualización en pantalla. La atribución va en pantalla y en `asset.copyright`.
+
+### Pendiente de verificación por Chris (con los programas reales)
+- **SketchUp Pro (escritorio):** Archivo → Importar el GLB; que se vea el terreno con textura y los edificios.
+- **Blender (gratuito):** importar el GLB; comprobar orientación (Z/Y), textura y escala en metros.
+- **Visor 3D de Windows:** abrir el GLB.

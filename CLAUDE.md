@@ -41,9 +41,10 @@ src/core/            lógica pura, sin React. Testeable en Node.
   contexto/          edificaciones y vías de OSM: Overpass (contexto.ts) y respaldo por teselas MVT (teselas.ts)
   envelope/          envolvente como CAMPO DE ALTURAS (+ refineMax: altura máxima bajo la celda) + utilidades de
                      polígono (cleanRing, longitudPolilinea); lote.ts: lote por dimensiones
-  export/            DXF 2000 (AC1015; dxf2000.ts) y malla OBJ (obj.ts); solido.ts (earcut: muros+techo, sólidos
-                     cerrados); referencia.ts (escala, norte, recuadro); sceneDxf.ts compone la escena. UTM o local,
-                     ASCII puro (texto no ASCII → \U+XXXX)
+  export/            DXF 2000 (AC1015; dxf2000.ts), malla OBJ (obj.ts) y modelo GLB con textura (glb.ts + glbCore.ts
+                     puro; mosaico.ts/textura.ts para la textura); solido.ts (earcut: muros+techo, sólidos cerrados);
+                     referencia.ts (escala, norte, recuadro); sceneDxf.ts compone la escena. UTM o local, ASCII puro
+                     (texto no ASCII → \U+XXXX)
   normativa/         perfiles normativos — ÚNICO lugar con valores normativos
 src/app/             piezas comunes de la UI
   store.ts           estado: sitio, terreno, contexto y origen de exportación COMPARTIDOS + estado de cada módulo
@@ -126,8 +127,16 @@ techo(p) = min( suelo(p) + Hmax ,  min_lados_i  min_{q ∈ lado_i}  [ suelo(q) +
   cortas que 30 m ni que el ancho del texto. El mapa usa la MISMA función (rótulos como puntos), no la colocación por
   línea de MapLibre (en píxeles). La preselección de equidistancia nunca baja de la mínima confiable; las menores quedan
   disponibles a mano con el aviso de precisión aparente (Terrarium reporta ~30 m, así que su mínima confiable es 5 m).
-- Descargas: origen **local** (esquina SO del área en 0,0) por defecto, o **UTM absolutas**; la Z siempre es cota real.
-  Mismo origen para DXF y OBJ. `exportOrigin` vive en el store y se guarda en el `.geoarc`.
+- Descargas: **una tarjeta por formato**, todas visibles (DXF 2000, GLB, OBJ); nada escondido en diálogos. Origen
+  **local** (esquina SO del área en 0,0) por defecto o **UTM absolutas**; la Z siempre es cota real. Mismo origen para
+  los tres. `exportOrigin` vive en el store y se guarda en el `.geoarc`; `exportDensidad` (Gruesa/Media/Fina) y
+  `exportTextura` (satelital/osm/ninguna) viven en el store (no en el `.geoarc`).
+- GLB (`glb.ts`): `GLTFExporter` de three, binario. Solo navegador (three + canvas). `glbCore.ts` es puro (ejes
+  Z-arriba→Y-arriba `(x,y,z)→(x,z,−y)`, submuestreo de densidad, inyección de `asset.copyright`/`generator`) y se prueba
+  en Node. La textura es un mosaico de teselas (Esri u OSM) SIN reproyectar: cada vértice se mapea con su lon/lat al píxel
+  del mosaico (UV); `mosaico.ts` (puro) elige el zoom para 2048–4096 px. GLTFExporter re-codifica la textura al mimeType
+  de `userData.mimeType` (se usa `image/jpeg`; la calidad la fija el navegador, ~0,92, cercana al 85 pedido). La densidad
+  (Gruesa/Media/Fina) también la respeta el OBJ. Validar con el paquete `gltf-validator` (0 errores).
 - e2e: `interceptarMapaBase` (en `util.ts`) deja el mapa base determinista y sin red (gris); úsalo en los tests que no
   prueban el mapa base en vivo, para que `data-ready`/`data-idle` no dependan de que carguen las teselas de OpenFreeMap.
   Para validar o renderizar un DXF/OBJ hay un venv con ezdxf + matplotlib en el scratchpad de la sesión.
