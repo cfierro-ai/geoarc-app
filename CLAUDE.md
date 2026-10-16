@@ -115,8 +115,17 @@ techo(p) = min( suelo(p) + Hmax ,  min_lados_i  min_{q ∈ lado_i}  [ suelo(q) +
 - DXF: es **DXF 2000 (AC1015)**, no R12. Declara unidades (`$INSUNITS 6`, metros) y usa LWPOLYLINE / POLYLINE 3D /
   3DFACE con handles únicos y subclases (SketchUp y Rhino lo importan con geometría visible; R12 no). El andamiaje
   (TABLES, BLOCKS, OBJECTS) se calcó de un AC1015 de ezdxf; validar cambios con ezdxf `readfile`+`audit` (0 errores).
-  Los edificios van como sólidos 3DFACE (muros+techo con earcut), no por espesor. El texto no ASCII va como `\U+XXXX`
+  Los edificios van como sólidos 3DFACE (muros+techo con earcut), no por espesor. El techo marca invisibles sus aristas
+  interiores (código 70 del 3DFACE) para que en planta se vea solo el contorno. El texto no ASCII va como `\U+XXXX`
   (R2000 no admite UTF-8 en TEXT); no escribir caracteres no ASCII sueltos.
+- DXF/OBJ apoyados en el terreno: el AREA es una POLYLINE 3D muestreada cada celda (`densificarAnillo`), con la cota real
+  por vértice; la REFERENCIA y la ATRIBUCION van a la cota mínima del terreno en el área, redondeada hacia abajo (nunca
+  z=0, que flotaría bajo el terreno). El contexto del respaldo por teselas (multipolígono fusionado por altura) se separa
+  en edificios con `agruparAnillos` (por contención) antes de triangular: nunca anillos disjuntos como un solo polígono.
+- Rótulos de cota (`labelPlacements`): solo maestras, uno cada ~150 m, al menos uno sobre 30 m, ninguno en curvas más
+  cortas que 30 m ni que el ancho del texto. El mapa usa la MISMA función (rótulos como puntos), no la colocación por
+  línea de MapLibre (en píxeles). La preselección de equidistancia nunca baja de la mínima confiable; las menores quedan
+  disponibles a mano con el aviso de precisión aparente (Terrarium reporta ~30 m, así que su mínima confiable es 5 m).
 - Descargas: origen **local** (esquina SO del área en 0,0) por defecto, o **UTM absolutas**; la Z siempre es cota real.
   Mismo origen para DXF y OBJ. `exportOrigin` vive en el store y se guarda en el `.geoarc`.
 - e2e: `interceptarMapaBase` (en `util.ts`) deja el mapa base determinista y sin red (gris); úsalo en los tests que no

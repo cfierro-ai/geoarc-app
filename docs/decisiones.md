@@ -390,3 +390,35 @@ Desde https://cfierro-ai.github.io/geoarc-app/ con fuente Copernicus, y con `cur
 ### Ramas y PR
 - Trabajo apilado sobre `v0.2-simplificar` (PR #4), que seguía abierto. El PR #5 va con base en esa rama; cuando #4 se
   mezcle a `main`, su base se puede cambiar a `main`.
+
+## 2026-10-15 · PR #5 · hallazgos de Chris en AutoCAD LT y SketchUp (11–15)
+
+Chris abrió el DXF 2000 (origen local) en AutoCAD LT y SketchUp y reportó cinco cosas a corregir. Un commit por punto,
+sobre la misma rama `v0.2-exportacion`.
+
+11. **Z de AREA y REFERENCIA.** En 3D, el contorno del AREA y el recuadro de REFERENCIA quedaban en z = 0, decenas de
+    metros bajo el terreno (que va a cota real). Ahora el AREA es una **POLYLINE 3D** apoyada sobre el terreno,
+    muestreada cada celda del DEM (`densificarAnillo`), con la cota real en cada vértice; y la REFERENCIA (y la
+    ATRIBUCION de OSM) se dibujan a la **cota mínima del terreno dentro del área, redondeada hacia abajo**. En el OBJ, el
+    contorno del AREA va como polilínea `l` sobre el terreno; la REFERENCIA, por llevar texto, queda solo en el DXF.
+    Test: ningún vértice de AREA ni de REFERENCIA queda más de 1 m bajo la cota mínima.
+12. **Edificios del respaldo por teselas.** OpenFreeMap entrega los edificios fusionados por altura en un multipolígono.
+    Antes se apoyaba en `classifyRings` de la librería (en coordenadas de tesela); ahora se separan en edificios
+    individuales con `agruparAnillos` (por contención, en el marco local) **antes de triangular**, de modo que nunca se
+    triangula un conjunto de anillos disjuntos como un solo polígono. Además, el **techo** marca invisibles sus aristas
+    interiores (3DFACE código 70): en planta se ve solo el contorno del edificio y sus patios, no la malla de triángulos.
+13. **Rótulos de cota.** Criterio único para el plano (DXF) y el mapa: solo curvas maestras, uno cada ~150 m de longitud
+    de curva, al menos uno si la curva mide más de 30 m, ninguno en curvas más cortas que 30 m ni que el ancho del texto.
+    `labelPlacements` lo implementa y el mapa dibuja los rótulos como puntos con esa misma función (no la colocación por
+    línea de MapLibre, en píxeles).
+14. **Preselección de equidistancia.** La preselección ya nunca bajaba de la mínima confiable (las candidatas se filtran
+    a `≥ min`); se fija con un test (dato de 30 m, 12 m de desnivel → 5 m, 2 curvas) y, cuando resultan menos de 5 curvas,
+    el panel avisa «poco desnivel para esta resolución: N curvas». **Por qué Chris vio 1 m con Terrarium:** no fue la
+    preselección. Terrarium reporta su resolución como `máx(30 m SRTM, tamaño de píxel)` ≈ 30 m, así que la mínima
+    confiable es 5 m y la preselección da 5 m. El 1 m solo se alcanza **eligiéndolo a mano** en el selector, que lo ofrece
+    marcado «· aparente» y con el aviso «la precisión es aparente». Fue una elección manual, no un error de preselección.
+15. **Verificación de escala en e2e.** En el DXF descargado, la barra de 100 m de la capa REFERENCIA mide 100,000 ± 0,001
+    (1 unidad del DXF = 1 m) y el ancho del AREA coincide con el que muestra la app.
+
+Cierre: unit + typecheck + e2e completo; ezdxf (`readfile` + `audit`) sobre el DXF real: 0 errores, 0 arreglos; el código
+70 de los 3DFACE del techo es válido. Se dejan de nuevo los tres archivos de muestra (curvas, área-polígono, contexto).
