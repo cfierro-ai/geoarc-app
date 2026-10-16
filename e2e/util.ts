@@ -227,3 +227,38 @@ export function pixelGlobal(lon: number, lat: number, z: number) {
   const r = (lat * Math.PI) / 180
   return { x: ((lon + 180) / 360) * n, y: ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n }
 }
+
+/**
+ * Intercepta las teselas de textura (Esri y OSM) y devuelve una tesela de color distinto por (x, y), con CORS, para
+ * que la textura del GLB sea determinista y su orientación se pueda revisar en la captura. No sale a la red.
+ */
+export async function interceptarTeselasTextura(page: Page) {
+  const n = { esri: 0, osm: 0 }
+  const servir = (r: Parameters<Parameters<Page['route']>[1]>[0]) => {
+    const nums = (new URL(r.request().url()).pathname.match(/\d+/g) ?? []).map(Number)
+    const [a = 0, b = 0] = nums.slice(-2) // los dos últimos números del path (x, y en algún orden)
+    return r.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: solidPng((a * 53) % 256, (b * 97) % 256, 150),
+    })
+  }
+  await page.route('https://server.arcgisonline.com/**', (r) => {
+    n.esri++
+    return servir(r)
+  })
+  await page.route('https://tile.openstreetmap.org/**', (r) => {
+    n.osm++
+    return servir(r)
+  })
+  return n
+}
+
+/** Lee la cabecera y el chunk JSON de un GLB binario. */
+export function parseGlb(buf: Buffer): { esGlTF: boolean; version: number; json: any } {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
+  const jsonLen = dv.getUint32(12, true)
+  const json = JSON.parse(Buffer.from(buf.buffer, buf.byteOffset + 20, jsonLen).toString('utf8'))
+  return { esGlTF: dv.getUint32(0, true) === 0x46546c67, version: dv.getUint32(4, true), json }
+}
