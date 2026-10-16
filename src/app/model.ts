@@ -110,7 +110,8 @@ export const TEXTURAS: TexturaInfo[] = [
     label: 'Satelital (Esri)',
     atribucion: 'Imágenes: Esri, Maxar, Earthstar Geographics y la comunidad de usuarios GIS',
     urlPlantilla: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    maxZoom: 21,
+    // World Imagery tiene imagen hasta ~z19 en Chile (z20+ devuelve «Map data not yet available»); sobre eso, mosaico más chico
+    maxZoom: 19,
   },
   { id: 'osm', label: 'Mapa (OSM)', atribucion: '© OpenStreetMap contributors', urlPlantilla: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19 },
   { id: 'ninguna', label: 'Sin textura' },

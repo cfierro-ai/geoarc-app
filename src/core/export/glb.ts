@@ -83,6 +83,7 @@ export async function sceneToGlb(s: SceneForGlb): Promise<ResultadoGlb> {
     const tex = new THREE.CanvasTexture(s.textura.canvas)
     tex.flipY = false // glTF no tiene flipY; las UV ya van con v=0 arriba
     tex.colorSpace = THREE.SRGBColorSpace
+    tex.userData.mimeType = 'image/jpeg' // la textura se incrusta como JPEG (chico), no PNG; GLTFExporter la re-codifica
     tex.needsUpdate = true
     terrMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0, side: THREE.DoubleSide })
   } else {
