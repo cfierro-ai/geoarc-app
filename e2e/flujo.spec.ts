@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { dibujarArea, interceptarContexto, usarLaderaSintetica } from './util'
+import { dibujarArea, interceptarContexto, interceptarMapaBase, usarLaderaSintetica } from './util'
 
 /**
  * Flujo docente completo SIN red externa, por los dos módulos y con el estado compartido:
@@ -11,6 +11,7 @@ test('inicio → curvas → estudio de sombras sobre el terreno del sitio → vi
   page.on('pageerror', (e) => errors.push(e.message))
   await interceptarContexto(page)
 
+  await interceptarMapaBase(page)
   await page.goto('/')
   await page.getByTestId('tarjeta-curvas').click()
   await expect(page).toHaveURL(/\/curvas$/)
@@ -23,7 +24,7 @@ test('inicio → curvas → estudio de sombras sobre el terreno del sitio → vi
   await expect(page.getByTestId('uso-dato-texto')).toContainText('Terreno inventado')
   const [curvas] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Descargar DXF (UTM)' }).click(),
+    page.getByRole('button', { name: 'Descargar DXF 2000' }).click(),
   ])
   await curvas.saveAs('e2e/capturas/11-curvas-ladera.dxf')
 

@@ -15,6 +15,7 @@ import {
   type DemSourceId,
   type DemStatus,
   type EdgeSetting,
+  type ExportOrigin,
   type TerrainMode,
   type View,
 } from './model'
@@ -77,6 +78,8 @@ export interface AppState {
   terrain: TerrainState
   contexto: ContextoState
   capas: CapasState
+  /** Origen de las coordenadas de las descargas (compartido por los dos módulos). */
+  exportOrigin: ExportOrigin
   curvas: CurvasState
   sombras: SombrasState
 }
@@ -87,6 +90,7 @@ export function initialState(): AppState {
     terrain: { area: null, polygon: null, source: 'terrarium', dem: null, status: { state: 'idle' } },
     contexto: { estado: 'idle', datos: null, area: null },
     capas: { edificaciones: true, vias: true },
+    exportOrigin: 'local',
     curvas: { contourInterval: 5, indexEvery: 5, showDataGrid: false, view: 'mapa' },
     sombras: {
       terrainMode: 'plano',
@@ -207,6 +211,9 @@ export function createAppStore(loaders?: DemLoaders, contextoLoader: ContextoLoa
     setCapas(p: Partial<CapasState>) {
       set({ capas: { ...state.capas, ...p } })
     },
+    setExportOrigin(o: ExportOrigin) {
+      set({ exportOrigin: o })
+    },
     setCurvas,
     setSombras,
     setSite(p: LonLat) {
@@ -273,6 +280,7 @@ export function createAppStore(loaders?: DemLoaders, contextoLoader: ContextoLoa
         profileId: sombras.profileId,
         maxHeight: sombras.maxHeight,
         edges: sombras.edges,
+        exportOrigin: state.exportOrigin,
       }
     },
     openScene(s: Scene) {
@@ -281,6 +289,7 @@ export function createAppStore(loaders?: DemLoaders, contextoLoader: ContextoLoa
       set({
         // el contexto guardado se usa tal cual: no se vuelve a descargar
         contexto: s.contexto && s.area ? { estado: 'listo', datos: s.contexto, area: s.area } : { estado: 'idle', datos: null, area: null },
+        exportOrigin: s.exportOrigin,
         site: s.site,
         terrain: { area: s.area, polygon: s.areaPolygon, source: s.demSource, dem: null, status: { state: 'idle', warn: s.notice } },
         curvas: { ...state.curvas, contourInterval: s.contourInterval, indexEvery: s.indexEvery },

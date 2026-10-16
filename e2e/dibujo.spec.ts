@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { centroMapa } from './util'
+import { centroMapa, interceptarMapaBase } from './util'
 
 /**
  * Regresión del bug del handoff v1.2: el lote dibujado debe quedar donde se hace clic.
@@ -7,6 +7,7 @@ import { centroMapa } from './util'
  * (superficie según escala del mapa y vértices sobre los puntos cliqueados). En plano: no hace falta terreno.
  */
 test('dibujar lote en el mapa: el polígono queda bajo el cursor', async ({ page }) => {
+  await interceptarMapaBase(page)
   await page.goto('/sombras')
   const { cx, cy } = await centroMapa(page)
   const d = 60

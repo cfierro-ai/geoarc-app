@@ -6,7 +6,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { XY } from '../../core/geo/local'
 import type { HeightGrid } from '../../core/dem/grid'
 import { gridStats, sampleBilinear, sampleClamped } from '../../core/dem/grid'
-import type { Edificacion } from '../../core/contexto/contexto'
+import { esAlturaConocida, type Edificacion } from '../../core/contexto/contexto'
 import { isIndexLevel, type Isoline } from '../../core/contours/isolines'
 import type { EnvelopeResult, EnvelopeContext } from '../../core/envelope/envelope'
 import { GOV_MAX_HEIGHT } from '../../core/envelope/envelope'
@@ -249,11 +249,11 @@ function contextBuildings(edificaciones: Edificacion[], dem: HeightGrid, zRef: n
   return merged ? { geom: merged, n: geoms.length } : null
 }
 
-function ContextMesh({ geom }: { geom: THREE.BufferGeometry }) {
+function ContextMesh({ geom, color }: { geom: THREE.BufferGeometry; color: string }) {
   useEffect(() => () => geom.dispose(), [geom])
   return (
     <mesh geometry={geom} castShadow receiveShadow>
-      <meshStandardMaterial color="#cbd5e1" roughness={0.85} />
+      <meshStandardMaterial color={color} roughness={0.85} />
     </mesh>
   )
 }
@@ -287,7 +287,16 @@ export function Scene3D(p: Props) {
   const { min } = useMemo(() => gridStats(p.dem), [p.dem])
   const zRef = min
   const ex = p.exaggeration
-  const ctx = useMemo(() => (p.edificaciones?.length ? contextBuildings(p.edificaciones, p.dem, zRef, ex) : null), [p.edificaciones, p.dem, zRef, ex])
+  // edificios del contexto: con altura conocida (tono normal) y supuestos (tono más claro)
+  const ctxConocidas = useMemo(
+    () => contextBuildings(p.edificaciones?.filter((e) => esAlturaConocida(e.alturaFuente)) ?? [], p.dem, zRef, ex),
+    [p.edificaciones, p.dem, zRef, ex],
+  )
+  const ctxSupuestas = useMemo(
+    () => contextBuildings(p.edificaciones?.filter((e) => !esAlturaConocida(e.alturaFuente)) ?? [], p.dem, zRef, ex),
+    [p.edificaciones, p.dem, zRef, ex],
+  )
+  const nCtx = (ctxConocidas?.n ?? 0) + (ctxSupuestas?.n ?? 0)
   /**
    * Altura de la envolvente con que se encuadra la cámara. Se fija al cambiar el lote o el terreno; al editar la norma
    * solo se reencuadra si la envolvente crece y quedaría cortada (no en cada cambio, que reiniciaría la órbita).
@@ -318,7 +327,7 @@ export function Scene3D(p: Props) {
   }, [p.lot, p.dem, fitHeight, ex])
 
   return (
-    <div className="absolute inset-0 bg-gradient-to-b from-slate-200 to-slate-50" data-testid="scene3d" data-edificaciones={ctx?.n ?? 0}>
+    <div className="absolute inset-0 bg-gradient-to-b from-slate-200 to-slate-50" data-testid="scene3d" data-edificaciones={nCtx}>
       <Canvas
         shadows
         camera={{ fov: 40, near: 0.5, far: 20000 }}
@@ -334,7 +343,8 @@ export function Scene3D(p: Props) {
         <Terrain dem={p.dem} zRef={zRef} ex={ex} />
         <Contours contours={p.contours} indexInterval={p.indexInterval} zRef={zRef} ex={ex} />
         {p.lot.length > 2 && <LotOutline lot={p.lot} dem={p.dem} zRef={zRef} ex={ex} />}
-        {ctx && <ContextMesh geom={ctx.geom} />}
+        {ctxConocidas && <ContextMesh geom={ctxConocidas.geom} color="#cbd5e1" />}
+        {ctxSupuestas && <ContextMesh geom={ctxSupuestas.geom} color="#e9edf2" />}
         {p.envelope && <EnvelopeBlocks env={p.envelope} zRef={zRef} ex={ex} selectedEdge={p.selectedEdge} />}
         {p.didactic && p.envelope && p.envCtx && (
           <RasantePlanes ctx={p.envCtx} env={p.envelope} zRef={zRef} ex={ex} selectedEdge={p.selectedEdge} />

@@ -18,6 +18,7 @@ const scene: Scene = {
   profileId: 'oguc',
   maxHeight: 10.5,
   edges: defaultEdges(3, PERFIL_OGUC),
+  exportOrigin: 'utm',
 }
 
 describe('archivo .geoarc', () => {
@@ -31,6 +32,14 @@ describe('archivo .geoarc', () => {
       expect(p.y).toBeCloseTo(scene.lot[i].y, 6)
     })
     expect([s.contourInterval, s.indexEvery, s.demSource, s.terrainMode, s.notice, s.areaPolygon]).toEqual([5, 4, 'terrarium', 'sitio', undefined, null])
+    expect(s.exportOrigin).toBe('utm')
+  })
+
+  it('v4: el origen de exportación se guarda; un archivo sin el campo abre en «local»', () => {
+    expect(parseScene(JSON.stringify(serializeScene({ ...scene, exportOrigin: 'local' }))).exportOrigin).toBe('local')
+    const { exportOrigin: _o, ...sinOrigen } = serializeScene(scene)
+    void _o
+    expect(parseScene(JSON.stringify(sinOrigen)).exportOrigin).toBe('local')
   })
 
   it('v4: el área dibujada como polígono se guarda en lon/lat y vuelve igual', () => {

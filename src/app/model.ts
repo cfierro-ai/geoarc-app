@@ -38,8 +38,8 @@ export interface EdgeSetting {
   rule: EdgeRule
 }
 
-/** Qué hace un clic en el mapa: nada, fijar el sitio, área rectangular (dos esquinas), área poligonal o lote. */
-export type MapMode = 'none' | 'site' | 'area' | 'poligono' | 'lot'
+/** Qué hace un clic en el mapa: nada, fijar el sitio, área rectangular (dos esquinas), área poligonal, lote o medir. */
+export type MapMode = 'none' | 'site' | 'area' | 'poligono' | 'lot' | 'medir'
 
 export const EDGE_COLORS = ['#e4572e', '#17bebb', '#f2b705', '#76b041', '#8e6bbf', '#2e86ab', '#f28482', '#a0522d']
 export const MAX_HEIGHT_COLOR = '#9aa3ad'
@@ -65,6 +65,15 @@ export function exampleLot(): XY[] {
 }
 
 export type View = 'mapa' | '3d'
+
+/** Origen de las coordenadas de las descargas (DXF, OBJ). */
+export type ExportOrigin = 'local' | 'utm'
+export const EXPORT_ORIGINS: { id: ExportOrigin; label: string; hint: string }[] = [
+  { id: 'local', label: 'Local (esquina SO del área en 0,0)', hint: 'Coordenadas pequeñas, cómodas en CAD. El archivo anota el origen en UTM.' },
+  { id: 'utm', label: 'UTM absolutas', hint: 'Georreferenciado: coordenadas UTM del huso del sitio. Útil para SIG.' },
+]
+/** Sufijo del nombre de archivo según el origen: «_local» o «_UTM». */
+export const origenSufijo = (o: ExportOrigin) => (o === 'local' ? '_local' : '_UTM')
 
 /** Terreno del estudio de sombras. */
 export type TerrainMode = 'plano' | 'sitio'

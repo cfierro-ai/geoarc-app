@@ -40,12 +40,15 @@ src/core/            lógica pura, sin React. Testeable en Node.
   contours/escala.ts equidistancia mínima confiable, preselección y uso del dato — ÚNICO lugar del criterio
   contexto/          edificaciones y vías de OSM: Overpass (contexto.ts) y respaldo por teselas MVT (teselas.ts)
   envelope/          envolvente como CAMPO DE ALTURAS (+ refineMax: altura máxima bajo la celda) + utilidades de
-                     polígono (cleanRing); lote.ts: lote por dimensiones
-  export/            DXF R12 (curvas, área, contexto, lote, envolvente) en UTM absolutas, ASCII puro
+                     polígono (cleanRing, longitudPolilinea); lote.ts: lote por dimensiones
+  export/            DXF 2000 (AC1015; dxf2000.ts) y malla OBJ (obj.ts); solido.ts (earcut: muros+techo, sólidos
+                     cerrados); referencia.ts (escala, norte, recuadro); sceneDxf.ts compone la escena. UTM o local,
+                     ASCII puro (texto no ASCII → \U+XXXX)
   normativa/         perfiles normativos — ÚNICO lugar con valores normativos
 src/app/             piezas comunes de la UI
-  store.ts           estado: sitio, terreno y contexto COMPARTIDOS + estado de cada módulo; carga de terreno y contexto
+  store.ts           estado: sitio, terreno, contexto y origen de exportación COMPARTIDOS + estado de cada módulo
   contextoLoader.ts  Overpass → teselas de OpenFreeMap si falla
+  useMeasure.ts      herramienta Medir (distancia/área en el marco local), compartida por los dos módulos
   router.ts          rutas / (inicio), /curvas, /sombras bajo la base del despliegue
   components/        mapa (MapLibre), vista 3D (React-Three-Fiber), inicio, paso Sitio, info del terreno y del contexto, ui
 src/modules/         un módulo por carpeta: curvas/ (Curvas de nivel), sombras/ (Estudio de sombras)
@@ -109,7 +112,24 @@ techo(p) = min( suelo(p) + Hmax ,  min_lados_i  min_{q ∈ lado_i}  [ suelo(q) +
   sin User-Agent de navegador (desde el navegador va bien) y puede responder 200 con el error en `remark`.
 - e2e: todo test que defina un área dispara el contexto; usar `interceptarContexto` (`e2e/util.ts`) para no salir a
   Overpass. `CONTEXTO_TEMUCO` es el fixture con tres edificios y dos vías.
-- DXF: R12 no declara la codificación del texto; lo no ASCII va como `\U+XXXX` (p. ej. «©»). No escribir
-  caracteres no ASCII sueltos en el DXF.
+- DXF: es **DXF 2000 (AC1015)**, no R12. Declara unidades (`$INSUNITS 6`, metros) y usa LWPOLYLINE / POLYLINE 3D /
+  3DFACE con handles únicos y subclases (SketchUp y Rhino lo importan con geometría visible; R12 no). El andamiaje
+  (TABLES, BLOCKS, OBJECTS) se calcó de un AC1015 de ezdxf; validar cambios con ezdxf `readfile`+`audit` (0 errores).
+  Los edificios van como sólidos 3DFACE (muros+techo con earcut), no por espesor. El techo marca invisibles sus aristas
+  interiores (código 70 del 3DFACE) para que en planta se vea solo el contorno. El texto no ASCII va como `\U+XXXX`
+  (R2000 no admite UTF-8 en TEXT); no escribir caracteres no ASCII sueltos.
+- DXF/OBJ apoyados en el terreno: el AREA es una POLYLINE 3D muestreada cada celda (`densificarAnillo`), con la cota real
+  por vértice; la REFERENCIA y la ATRIBUCION van a la cota mínima del terreno en el área, redondeada hacia abajo (nunca
+  z=0, que flotaría bajo el terreno). El contexto del respaldo por teselas (multipolígono fusionado por altura) se separa
+  en edificios con `agruparAnillos` (por contención) antes de triangular: nunca anillos disjuntos como un solo polígono.
+- Rótulos de cota (`labelPlacements`): solo maestras, uno cada ~150 m, al menos uno sobre 30 m, ninguno en curvas más
+  cortas que 30 m ni que el ancho del texto. El mapa usa la MISMA función (rótulos como puntos), no la colocación por
+  línea de MapLibre (en píxeles). La preselección de equidistancia nunca baja de la mínima confiable; las menores quedan
+  disponibles a mano con el aviso de precisión aparente (Terrarium reporta ~30 m, así que su mínima confiable es 5 m).
+- Descargas: origen **local** (esquina SO del área en 0,0) por defecto, o **UTM absolutas**; la Z siempre es cota real.
+  Mismo origen para DXF y OBJ. `exportOrigin` vive en el store y se guarda en el `.geoarc`.
+- e2e: `interceptarMapaBase` (en `util.ts`) deja el mapa base determinista y sin red (gris); úsalo en los tests que no
+  prueban el mapa base en vivo, para que `data-ready`/`data-idle` no dependan de que carguen las teselas de OpenFreeMap.
+  Para validar o renderizar un DXF/OBJ hay un venv con ezdxf + matplotlib en el scratchpad de la sesión.
 - Vista 3D con `frameloop='demand'`: todo cambio fuera de las props de React (matrices/colores de instancias, cámara)
   debe llamar a `invalidate()`. R3F 9.8.1 no redibuja al desmontar objetos; lo cubre `RedrawOnUpdate` en `Scene3D.tsx`.
