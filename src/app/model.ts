@@ -93,6 +93,37 @@ export const DENSIDADES: DensidadInfo[] = [
 ]
 export const densidadDe = (id: DensidadId) => DENSIDADES.find((d) => d.id === id) ?? DENSIDADES[1]
 
+/** Textura del modelo 3D (GLB): mosaico de teselas raster (sin reproyectar), o sin textura. Por defecto satelital. */
+export type TexturaId = 'satelital' | 'osm' | 'ninguna'
+export interface TexturaInfo {
+  id: TexturaId
+  label: string
+  atribucion?: string
+  /** Plantilla de URL de teselas; {z}/{x}/{y}. Esri usa {z}/{y}/{x}. */
+  urlPlantilla?: string
+  /** Zoom máximo con imagen de la fuente (sobre eso el mosaico se queda más chico que el objetivo de 2048–4096 px). */
+  maxZoom?: number
+}
+export const TEXTURAS: TexturaInfo[] = [
+  {
+    id: 'satelital',
+    label: 'Satelital (Esri)',
+    atribucion: 'Imágenes: Esri, Maxar, Earthstar Geographics y la comunidad de usuarios GIS',
+    urlPlantilla: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    maxZoom: 21,
+  },
+  { id: 'osm', label: 'Mapa (OSM)', atribucion: '© OpenStreetMap contributors', urlPlantilla: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19 },
+  { id: 'ninguna', label: 'Sin textura' },
+]
+export const texturaDe = (id: TexturaId) => TEXTURAS.find((t) => t.id === id) ?? TEXTURAS[0]
+
+/**
+ * Nota permanente de la tarjeta «Modelo 3D (GLB)»: con qué se abre. Una sola constante para ajustarla cuando Chris
+ * confirme las versiones de SketchUp.
+ */
+export const GLB_NOTA_APERTURA =
+  'Se abre con: SketchUp Pro de escritorio (Archivo → Importar), Blender (gratuito) y el visor 3D de Windows. Si tu SketchUp no lo importa, Blender lo abre y lo convierte.'
+
 /** Terreno del estudio de sombras. */
 export type TerrainMode = 'plano' | 'sitio'
 

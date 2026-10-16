@@ -7,6 +7,7 @@ import { densificarAnillo, pointInPolygon } from '../envelope/polygon'
 import { edificioSolido } from './solido'
 import { ATRIBUCION_OSM, esAlturaConocida, type Edificacion, type Via } from '../contexto/contexto'
 import { aYArriba, inyectarAsset, mallaTerreno, pasoDensidad } from './glbCore'
+import { uvDeLonLat, type MosaicoInfo } from './mosaico'
 
 /**
  * Modelo 3D en formato GLB (glTF binario) para SketchUp Pro, Blender y visores 3D, sin instalar nada. Metros
@@ -31,6 +32,8 @@ export interface SceneForGlb {
   vias?: Via[]
   /** Cota del terreno (coordenadas locales) para apoyar edificios, vías y el contorno del área. */
   cotaBase?: (p: XY) => number
+  /** Textura del terreno: el canvas del mosaico y su geometría (para las UV por vértice). Sin ella, terreno gris. */
+  textura?: { canvas: HTMLCanvasElement; mosaico: MosaicoInfo } | null
   /** Atribución para asset.copyright (textura + OSM). */
   copyright?: string
 }
@@ -67,7 +70,25 @@ export async function sceneToGlb(s: SceneForGlb): Promise<ResultadoGlb> {
   terrGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
   terrGeo.setIndex(malla.tris.flat())
   terrGeo.computeVertexNormals()
-  const terreno = new THREE.Mesh(terrGeo, new THREE.MeshStandardMaterial({ color: COLOR_TERRENO, roughness: 1, metalness: 0, side: THREE.DoubleSide }))
+  // textura: UV por vértice (lon/lat → píxel del mosaico, Web Mercator, sin reproyectar la imagen)
+  let terrMat: THREE.MeshStandardMaterial
+  if (s.textura) {
+    const uv = new Float32Array(malla.pos.length * 2)
+    malla.pos.forEach((p, i) => {
+      const t = uvDeLonLat(s.frame.toLonLat({ x: p.x, y: p.y }), s.textura!.mosaico)
+      uv[i * 2] = t.u
+      uv[i * 2 + 1] = t.v
+    })
+    terrGeo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+    const tex = new THREE.CanvasTexture(s.textura.canvas)
+    tex.flipY = false // glTF no tiene flipY; las UV ya van con v=0 arriba
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.needsUpdate = true
+    terrMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0, side: THREE.DoubleSide })
+  } else {
+    terrMat = new THREE.MeshStandardMaterial({ color: COLOR_TERRENO, roughness: 1, metalness: 0, side: THREE.DoubleSide })
+  }
+  const terreno = new THREE.Mesh(terrGeo, terrMat)
   terreno.name = 'terreno'
   scene.add(terreno)
   let triangulos = malla.tris.length

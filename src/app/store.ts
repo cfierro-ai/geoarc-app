@@ -18,6 +18,7 @@ import {
   type EdgeSetting,
   type ExportOrigin,
   type TerrainMode,
+  type TexturaId,
   type View,
 } from './model'
 import type { Scene } from './scene'
@@ -83,6 +84,8 @@ export interface AppState {
   exportOrigin: ExportOrigin
   /** Densidad de la malla 3D (GLB y OBJ), compartida por los dos módulos. */
   exportDensidad: DensidadId
+  /** Textura del modelo 3D (GLB), compartida por los dos módulos. */
+  exportTextura: TexturaId
   curvas: CurvasState
   sombras: SombrasState
 }
@@ -95,6 +98,7 @@ export function initialState(): AppState {
     capas: { edificaciones: true, vias: true },
     exportOrigin: 'local',
     exportDensidad: 'media',
+    exportTextura: 'satelital',
     curvas: { contourInterval: 5, indexEvery: 5, showDataGrid: false, view: 'mapa' },
     sombras: {
       terrainMode: 'plano',
@@ -220,6 +224,9 @@ export function createAppStore(loaders?: DemLoaders, contextoLoader: ContextoLoa
     },
     setExportDensidad(d: DensidadId) {
       set({ exportDensidad: d })
+    },
+    setExportTextura(t: TexturaId) {
+      set({ exportTextura: t })
     },
     setCurvas,
     setSombras,
