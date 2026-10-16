@@ -23,10 +23,12 @@ import { SiteSection } from '../../app/components/SiteSection'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
 import { ContextoPanel } from '../../app/components/ContextoInfo'
 import { DescargaTarjetas } from '../../app/components/DescargaTarjetas'
+import { TexturaSelector } from '../../app/components/DescargaTextura'
 import { btn, btnPrimary, input, ModulePanel, Note, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
 import { useMeasure } from '../../app/useMeasure'
-import { fmt, fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, origenSufijo, type MapMode } from '../../app/model'
+import { contenidoGlb, estimarGlb, exportarGlb, metaMalla } from '../../app/exportGlb'
+import { densidadDe, fmt, fmtAreaSize, fmtNum, GLB_NOTA_APERTURA, INDEX_EVERY_OPTIONS, origenSufijo, type MapMode } from '../../app/model'
 import { actions, useAppState } from '../../app/store'
 
 /** Contenido REAL del archivo según el formato (solo lo que va de verdad): para las tarjetas de descarga. */
@@ -56,6 +58,9 @@ export function CurvasModule() {
   const contexto = useAppState((s) => s.contexto)
   const capas = useAppState((s) => s.capas)
   const exportOrigin = useAppState((s) => s.exportOrigin)
+  const exportDensidad = useAppState((s) => s.exportDensidad)
+  const exportTextura = useAppState((s) => s.exportTextura)
+  const [glbAviso, setGlbAviso] = useState<string | null>(null)
   const ctxDatos = contexto.estado === 'listo' ? contexto.datos : null
   const [mode, setMode] = useState<MapMode>('none')
   const [areaCorner, setAreaCorner] = useState<XY | null>(null)
@@ -157,15 +162,34 @@ export function CurvasModule() {
       origin: exportOrigin,
       edificaciones: ctxDatos?.edificaciones,
       cotaBase: (p) => sampleClamped(dem, p.x, p.y),
+      celdasLado: densidadDe(exportDensidad).celdasLado,
     })
     const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
     download(`geoarc_malla_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.obj`, obj, 'text/plain')
+  }
+
+  const exportGlb = async () => {
+    if (!dem || !area) return
+    const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
+    const r = await exportarGlb(
+      { frame, grid: dem, area, areaPolygon: polygon, origin: exportOrigin, densidad: exportDensidad, edificaciones: ctxDatos?.edificaciones, vias: ctxDatos?.vias, cotaBase: (p) => sampleClamped(dem, p.x, p.y) },
+      exportTextura,
+      `geoarc_modelo3d_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.glb`,
+    )
+    setGlbAviso(r && r.fallos ? `${r.fallos} de ${r.total} teselas no cargaron: esas zonas quedan en gris.` : null)
   }
 
   const minConf = dem ? equidistanciaMinimaConfiable(dem.meta) : undefined
   const pre = dem && st ? preseleccionEquidistancia(dem.meta, st.max - st.min) : undefined
   const tooMany = (e: number) => !!st && contarNiveles(st.min, st.max, e) > MAX_NIVELES
   const cell = area ? autoCell(area) : null
+
+  const nEdif = ctxDatos?.edificaciones.length ?? 0
+  const nVias = ctxDatos?.vias.length ?? 0
+  const escenaGlb = dem && area ? { frame, grid: dem, area, areaPolygon: polygon, origin: exportOrigin, densidad: exportDensidad, edificaciones: ctxDatos?.edificaciones, vias: ctxDatos?.vias, cotaBase: (p: XY) => sampleClamped(dem, p.x, p.y) } : null
+  const glbEst = escenaGlb ? estimarGlb(escenaGlb, exportTextura) : null
+  const objEst = escenaGlb ? estimarGlb(escenaGlb, 'ninguna') : null
+  const densidadLabel = densidadDe(exportDensidad).label
 
   return (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -293,19 +317,33 @@ export function CurvasModule() {
                   titulo: 'Plano (DXF 2000)',
                   formato: 'DXF 2000 (AC1015)',
                   boton: 'Descargar DXF 2000',
-                  destacado: true,
                   onDescargar: exportDxf,
                   testId: 'tarjeta-dxf',
-                  contenido: contenidoArchivo('dxf', !!polygon, ctxDatos?.edificaciones.length ?? 0, ctxDatos?.vias.length ?? 0),
+                  contenido: contenidoArchivo('dxf', !!polygon, nEdif, nVias),
                 },
                 {
-                  titulo: 'Malla 3D (OBJ)',
+                  titulo: 'Modelo 3D (GLB)',
+                  formato: 'GLB (glTF binario)',
+                  boton: 'Descargar modelo 3D (GLB)',
+                  destacado: true,
+                  onDescargar: exportGlb,
+                  disabled: !dem,
+                  testId: 'tarjeta-glb',
+                  contenido: contenidoGlb(exportTextura, nEdif, nVias),
+                  meta: glbEst ? metaMalla(glbEst, densidadLabel) : undefined,
+                  extra: <TexturaSelector />,
+                  info: GLB_NOTA_APERTURA,
+                  nota: glbAviso ?? undefined,
+                },
+                {
+                  titulo: 'Malla (OBJ, sin textura)',
                   formato: 'OBJ (malla de triángulos)',
-                  boton: 'Descargar malla 3D (OBJ)',
+                  boton: 'Descargar malla (OBJ)',
                   onDescargar: exportObj,
                   disabled: !dem,
                   testId: 'tarjeta-obj',
-                  contenido: contenidoArchivo('obj', !!polygon, ctxDatos?.edificaciones.length ?? 0, ctxDatos?.vias.length ?? 0),
+                  contenido: contenidoArchivo('obj', !!polygon, nEdif, nVias),
+                  meta: objEst ? metaMalla(objEst, densidadLabel, false) : undefined,
                 },
               ]}
             />

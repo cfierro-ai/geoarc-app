@@ -1,5 +1,6 @@
 import type { XY, XYZ } from '../geo/local'
 import type { HeightGrid } from '../dem/grid'
+import { edificioSolido } from './solido'
 
 /**
  * Piezas puras del exportador GLB (sin three ni canvas): se prueban en Node. El ensamblado de la escena three y la
@@ -17,6 +18,17 @@ export function aYArriba(p: XYZ): [number, number, number] {
 /** Paso de submuestreo de la grilla para la densidad pedida (objetivo de celdas en el lado mayor del área). */
 export function pasoDensidad(g: HeightGrid, celdasLado: number): number {
   return Math.max(1, Math.round(Math.max(g.nx, g.ny) / Math.max(1, celdasLado)))
+}
+
+/** Triángulos de los edificios (depende solo de la topología de anillos/huecos, no de la altura). Para estimar tamaño. */
+export function trisEdificios(edificaciones: { anillo: XY[]; huecos: XY[][] }[]): number {
+  return edificaciones.reduce((s, e) => s + edificioSolido(e.anillo, e.huecos, 0, 1).length, 0)
+}
+
+/** Estimación (cota superior) de triángulos de la malla 3D para la tarjeta: terreno submuestreado + edificios. */
+export function estimarTriangulos(g: HeightGrid, celdasLado: number, trisEdif = 0): number {
+  const paso = pasoDensidad(g, celdasLado)
+  return 2 * Math.ceil((g.nx - 1) / paso) * Math.ceil((g.ny - 1) / paso) + trisEdif
 }
 
 export interface MallaTerreno {
