@@ -34,11 +34,11 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   await page.mouse.click(cx - 95, cy + 95)
   await page.waitForTimeout(350)
   await expect(page.getByTestId('area-info')).toHaveCount(0)
-  // la vista previa sigue al cursor con su tamaño en metros y hectáreas
-  await page.mouse.move(cx + 100, cy - 100)
+  // la vista previa sigue al cursor con su tamaño en metros y hectáreas; el área es de ~210 m (barra de escala de 100 m)
+  await page.mouse.move(cx + 340, cy - 340)
   await expect(page.getByTestId('map-banner')).toContainText(/\d+ × \d+ m · [\d,]+ ha/)
   await page.screenshot({ path: 'e2e/capturas/08-area-dibujo.png' })
-  await page.mouse.click(cx + 100, cy - 100)
+  await page.mouse.click(cx + 340, cy - 340)
 
   // sin botón: el terreno se descarga al cerrar el área
   await expect(page.getByTestId('dem-info')).toContainText('Terrarium')
@@ -46,7 +46,7 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   expect(n.copernicus).toBe(0)
   await expect(page.getByTestId('area-info')).toContainText(/\d+ × \d+ m · [\d,]+ ha · celda [\d,]+ m/)
 
-  // dato de ~30 m: etiqueta informativa, mínima confiable 5 m; ~38 m de desnivel → 5 m preseleccionada (7 curvas)
+  // dato de ~30 m: etiqueta informativa, mínima confiable 5 m; ~80 m de desnivel → 5 m preseleccionada
   await expect(page.getByTestId('uso-dato-texto')).toHaveText('Dato de ~30 m: útil para ladera y barrio, no para el lote.')
   await expect(page.getByTestId('equidistancia-minima')).toHaveText('5 m')
   await expect(page.getByTestId('equidistancia-sugerida')).toHaveText('5 m')
@@ -90,6 +90,16 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   expect(area).toHaveLength(1)
   expect(Math.min(...area[0].flatMap((p) => [p.x, p.y]))).toBeCloseTo(0, 2) // esquina SO en el origen
   expect(lwpolilineasDxf(dxf, 'CURVAS_MAESTRAS').length).toBeGreaterThan(0)
+
+  // escala: la barra de 100 m (capa REFERENCIA) mide 100,000 ± 0,001 → 1 unidad del DXF = 1 m
+  const barra = lwpolilineasDxf(dxf, 'REFERENCIA')[0] // primer segmento: la barra de escala, horizontal
+  const largoBarra = Math.hypot(barra[1].x - barra[0].x, barra[1].y - barra[0].y)
+  expect(dxf.match(/\n1\n(\d+) m\n/)?.[1]).toBe('100') // el rótulo de la barra dice «100 m»
+  expect(largoBarra).toBeCloseTo(100, 3)
+  // el ancho del área en el DXF coincide con el que muestra la app
+  const anchoApp = Number((await page.getByTestId('area-info').innerText()).match(/(\d+) ×/)![1])
+  const anchoDxf = Math.max(...area[0].map((p) => p.x)) - Math.min(...area[0].map((p) => p.x))
+  expect(Math.abs(anchoDxf - anchoApp)).toBeLessThanOrEqual(1)
 
   // cambiar a UTM: nombre con _UTM, coordenadas absolutas (centenares de miles) y sin TEXT de origen
   await page.getByRole('radio', { name: /UTM absolutas/ }).check()
