@@ -75,6 +75,24 @@ export const EXPORT_ORIGINS: { id: ExportOrigin; label: string; hint: string }[]
 /** Sufijo del nombre de archivo según el origen: «_local» o «_UTM». */
 export const origenSufijo = (o: ExportOrigin) => (o === 'local' ? '_local' : '_UTM')
 
+/**
+ * Densidad de la malla 3D (GLB y OBJ): objetivo de celdas en el lado MAYOR del área. La grilla del dato se submuestrea a
+ * esa densidad. Más densidad = más detalle y archivo más grande. Para ajustar los niveles, cambiar `celdasLado` aquí.
+ */
+export type DensidadId = 'gruesa' | 'media' | 'fina'
+export interface DensidadInfo {
+  id: DensidadId
+  label: string
+  celdasLado: number
+  hint: string
+}
+export const DENSIDADES: DensidadInfo[] = [
+  { id: 'gruesa', label: 'Gruesa', celdasLado: 60, hint: 'Pocos triángulos: liviana, para corte láser o impresión 3D.' },
+  { id: 'media', label: 'Media', celdasLado: 120, hint: 'Equilibrio entre detalle y tamaño.' },
+  { id: 'fina', label: 'Fina', celdasLado: 240, hint: 'Más detalle; archivo más grande.' },
+]
+export const densidadDe = (id: DensidadId) => DENSIDADES.find((d) => d.id === id) ?? DENSIDADES[1]
+
 /** Terreno del estudio de sombras. */
 export type TerrainMode = 'plano' | 'sitio'
 

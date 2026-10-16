@@ -14,6 +14,7 @@ import {
   TEMUCO,
   type DemSourceId,
   type DemStatus,
+  type DensidadId,
   type EdgeSetting,
   type ExportOrigin,
   type TerrainMode,
@@ -80,6 +81,8 @@ export interface AppState {
   capas: CapasState
   /** Origen de las coordenadas de las descargas (compartido por los dos módulos). */
   exportOrigin: ExportOrigin
+  /** Densidad de la malla 3D (GLB y OBJ), compartida por los dos módulos. */
+  exportDensidad: DensidadId
   curvas: CurvasState
   sombras: SombrasState
 }
@@ -91,6 +94,7 @@ export function initialState(): AppState {
     contexto: { estado: 'idle', datos: null, area: null },
     capas: { edificaciones: true, vias: true },
     exportOrigin: 'local',
+    exportDensidad: 'media',
     curvas: { contourInterval: 5, indexEvery: 5, showDataGrid: false, view: 'mapa' },
     sombras: {
       terrainMode: 'plano',
@@ -213,6 +217,9 @@ export function createAppStore(loaders?: DemLoaders, contextoLoader: ContextoLoa
     },
     setExportOrigin(o: ExportOrigin) {
       set({ exportOrigin: o })
+    },
+    setExportDensidad(d: DensidadId) {
+      set({ exportDensidad: d })
     },
     setCurvas,
     setSombras,
