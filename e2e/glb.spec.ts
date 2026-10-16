@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { CONTEXTO_TEMUCO, dibujarArea, interceptarContexto, interceptarMapaBase, interceptarTeselasTextura, interceptarTerrarium, parseGlb } from './util'
+import { CONTEXTO_TEMUCO, dibujarArea, interceptarContexto, interceptarMapaBase, interceptarTeselasTextura, interceptarTerrarium, parseGlb, renderGlb } from './util'
 
 /**
  * Descarga «Modelo 3D (GLB)» sin red: Terrarium es un plano inclinado, el contexto es el fixture de Temuco y las
@@ -50,4 +50,23 @@ test('GLB: textura satelital, magic glTF, malla del terreno, textura embebida y 
   expect(sinTex.json.meshes.length).toBeGreaterThan(1)
 
   expect(errors).toEqual([])
+})
+
+/**
+ * Verificación independiente (punto 4): el GLB se abre con three (GLTFLoader) y se renderiza. La captura permite revisar
+ * la orientación (terreno abajo, Y-arriba) y la textura (patrón de teselas de colores). El validador glTF (0 errores) se
+ * corre aparte, sobre los archivos de muestra.
+ */
+test('GLB: se abre con three (GLTFLoader) y se renderiza', async ({ page }) => {
+  await interceptarTerrarium(page)
+  await interceptarContexto(page, CONTEXTO_TEMUCO)
+  await interceptarMapaBase(page)
+  await interceptarTeselasTextura(page)
+  await page.goto('/curvas')
+  await dibujarArea(page, 120)
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Descargar modelo 3D (GLB)' }).click()])
+  const buf = await readFile(await dl.path())
+  const info = await renderGlb(page, buf, 'e2e/capturas/31-modelo-3d.png')
+  expect(info.error).toBeUndefined() // GLTFLoader lo cargó sin error
+  expect(info.nonBg ?? 0).toBeGreaterThan(5_000) // el modelo se renderizó (no un lienzo vacío)
 })

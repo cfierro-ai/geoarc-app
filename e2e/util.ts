@@ -262,3 +262,56 @@ export function parseGlb(buf: Buffer): { esGlTF: boolean; version: number; json:
   const json = JSON.parse(Buffer.from(buf.buffer, buf.byteOffset + 20, jsonLen).toString('utf8'))
   return { esGlTF: dv.getUint32(0, true) === 0x46546c67, version: dv.getUint32(4, true), json }
 }
+
+const VISOR_GLB = `<!doctype html><meta charset="utf-8"><body style="margin:0">
+<canvas id="c" width="640" height="640"></canvas>
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/vendor/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three'
+import { GLTFLoader } from '/vendor/jsm/loaders/GLTFLoader.js'
+const canvas = document.getElementById('c')
+const r = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true })
+r.setClearColor(0xeeeeee, 1)
+const scene = new THREE.Scene()
+scene.add(new THREE.HemisphereLight(0xffffff, 0x555555, 2.5))
+const d1 = new THREE.DirectionalLight(0xffffff, 1.2); d1.position.set(1, 2, 1.5); scene.add(d1)
+const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 1e6)
+new GLTFLoader().load('/modelo-render.glb', (g) => {
+  scene.add(g.scene)
+  const box = new THREE.Box3().setFromObject(g.scene)
+  const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3())
+  const dist = Math.max(s.x, s.y, s.z) * 1.6 || 10
+  cam.position.set(c.x + dist, c.y + dist, c.z + dist); cam.up.set(0, 1, 0); cam.lookAt(c)
+  r.render(scene, cam)
+  const gl = r.getContext(), px = new Uint8Array(640 * 640 * 4)
+  gl.readPixels(0, 0, 640, 640, gl.RGBA, gl.UNSIGNED_BYTE, px)
+  let nonBg = 0
+  for (let i = 0; i < px.length; i += 4) if (Math.abs(px[i] - 238) > 8 || Math.abs(px[i + 1] - 238) > 8 || Math.abs(px[i + 2] - 238) > 8) nonBg++
+  window.__render = { nonBg, total: 640 * 640 }
+}, undefined, (e) => { window.__render = { error: String(e) } })
+</script></body>`
+
+/**
+ * Abre un GLB con three (GLTFLoader) en el navegador headless y lo renderiza, para revisar orientación y textura. three
+ * y GLTFLoader se sirven desde node_modules (sin red). Devuelve cuántos píxeles no son el fondo y guarda la captura.
+ */
+export async function renderGlb(page: Page, glb: Buffer, outPng: string): Promise<{ nonBg?: number; total?: number; error?: string }> {
+  const { readFile } = await import('node:fs/promises')
+  // sirve three desde node_modules: build/*.js (three.module.js re-exporta three.core.js) y examples/jsm/**
+  await page.route('**/vendor/**', async (r) => {
+    const p = new URL(r.request().url()).pathname
+    const file = p.includes('/vendor/jsm/')
+      ? `node_modules/three/examples/jsm/${p.split('/vendor/jsm/')[1]}`
+      : `node_modules/three/build/${p.split('/vendor/')[1]}`
+    return r.fulfill({ contentType: 'text/javascript', body: await readFile(file, 'utf8') })
+  })
+  await page.route('**/modelo-render.glb', (r) => r.fulfill({ contentType: 'model/gltf-binary', body: glb }))
+  await page.route('**/__visor.html', (r) => r.fulfill({ contentType: 'text/html', body: VISOR_GLB }))
+  page.on('console', (m) => m.type() === 'error' && console.log('[visor console]', m.text()))
+  page.on('pageerror', (e) => console.log('[visor pageerror]', e.message))
+  await page.goto('/__visor.html')
+  await page.waitForFunction(() => (window as unknown as { __render?: unknown }).__render, null, { timeout: 30_000 })
+  const info = await page.evaluate(() => (window as unknown as { __render: { nonBg?: number; total?: number; error?: string } }).__render)
+  await page.locator('#c').screenshot({ path: outPng })
+  return info
+}
