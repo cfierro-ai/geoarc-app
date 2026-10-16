@@ -66,11 +66,11 @@ describe('escena → DXF 2000', () => {
     expect(all(maestra[0], 10)).toEqual([E(0), E(100)])
     expect(onLayer(ents, 'LWPOLYLINE', 'CURVAS')).toHaveLength(1)
 
-    // 5 rótulos «100» (lado 100 m / 160 = 0,5 m de texto) en ETIQUETAS
+    // 1 rótulo «100» (recta de 100 m: una cada ~150 m), a media curva, texto de 0,5 m (lado 100 / 160)
     const texts = onLayer(ents, 'TEXT', 'ETIQUETAS')
-    expect(texts).toHaveLength(5)
-    for (const t of texts) expect([first(t, 1), first(t, 40), first(t, 50)]).toEqual(['100', '0.500', '0.000'])
-    expect(texts.map((t) => first(t, 11))).toEqual([10, 30, 50, 70, 90].map(E))
+    expect(texts).toHaveLength(1)
+    expect([first(texts[0], 1), first(texts[0], 40), first(texts[0], 50)]).toEqual(['100', '0.500', '0.000'])
+    expect(first(texts[0], 11)).toBe(E(50))
 
     // AREA: POLYLINE 3D cerrada (70 = 9), 4 esquinas en UTM a cota 0 (sin terreno)
     const area = polyVerts(ents, 'AREA')

@@ -80,7 +80,10 @@ export function sceneToDxf(s: SceneForDxf): string {
   for (const c of s.contours) {
     const isIndex = isIndexLevel(c.level, s.indexInterval)
     w.lwpolyline(isIndex ? 'CURVAS_MAESTRAS' : 'CURVAS', c.points.map(U), c.closed, c.level)
-    if (isIndex) for (const l of labelPlacements(c, th)) w.text('ETIQUETAS', { ...U(l), z: c.level }, th, cotaLabel(c.level), l.angleDeg)
+    if (isIndex) {
+      const valor = cotaLabel(c.level)
+      for (const l of labelPlacements(c, th, valor)) w.text('ETIQUETAS', { ...U(l), z: c.level }, th, valor, l.angleDeg)
+    }
   }
 
   // AREA como POLILÍNEA 3D apoyada sobre el terreno (una cota por vértice, muestreada cada celda); plana (z=0) sin terreno

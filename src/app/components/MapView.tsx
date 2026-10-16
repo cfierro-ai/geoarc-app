@@ -17,6 +17,7 @@ setWorkerUrl(maplibreWorkerUrl)
 import type { LocalFrame, LonLat, XY } from '../../core/geo/local'
 import { isIndexLevel, type Isoline } from '../../core/contours/isolines'
 import { cotaLabel } from '../../core/contours/escala'
+import { labelHeight, labelPlacements } from '../../core/contours/labels'
 import { areaProblem, rectCorners, rectFromCorners, rectSize, type Rect } from '../../core/dem/area'
 import type { Contexto } from '../../core/contexto/contexto'
 import type { CapasState } from '../store'
@@ -180,6 +181,7 @@ export function MapView(p: Props) {
       m.addSource('area-draft', { type: 'geojson', data: empty })
       m.addSource('datagrid', { type: 'geojson', data: empty })
       m.addSource('contours', { type: 'geojson', data: empty })
+      m.addSource('contour-labels', { type: 'geojson', data: empty })
       m.addSource('lot', { type: 'geojson', data: empty })
       m.addSource('draft', { type: 'geojson', data: empty })
       m.addLayer({ id: 'area-fill', type: 'fill', source: 'area', paint: { 'fill-color': '#334155', 'fill-opacity': 0.04 } })
@@ -198,15 +200,20 @@ export function MapView(p: Props) {
           'line-opacity': 0.85,
         },
       })
+      // rótulos de cota como PUNTOS, colocados con el mismo criterio que el DXF (labelPlacements): una cada ~150 m,
+      // al menos una sobre 30 m, ninguna en curvas cortas. Giro alineado a la curva (text-rotate es horario).
       m.addLayer({
         id: 'contour-labels',
         type: 'symbol',
-        source: 'contours',
-        filter: ['get', 'index'],
+        source: 'contour-labels',
         layout: {
-          'symbol-placement': 'line',
+          'symbol-placement': 'point',
           'text-field': ['get', 'label'],
           'text-size': 10,
+          'text-rotate': ['get', 'rot'],
+          'text-rotation-alignment': 'map',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
           // OpenFreeMap sirve Noto Sans; la fuente por defecto de MapLibre (Open Sans) da 404 allí
           ...(ofmGlyphs ? { 'text-font': ['Noto Sans Regular'] } : {}),
         },
@@ -372,6 +379,16 @@ export function MapView(p: Props) {
         }
       }),
     })
+    // rótulos de cota: mismo criterio que el DXF (labelPlacements) sobre las curvas maestras, como puntos con giro
+    const th = p.area ? labelHeight(Math.max(rectSize(p.area).w, rectSize(p.area).h)) : 1
+    const labelFeats: Feature[] = []
+    for (const c of p.contours) {
+      if (!isIndexLevel(c.level, p.indexInterval)) continue
+      const valor = cotaLabel(c.level)
+      for (const lp of labelPlacements(c, th, valor))
+        labelFeats.push({ type: 'Feature', properties: { label: `${valor} m`, rot: -lp.angleDeg }, geometry: { type: 'Point', coordinates: ll({ x: lp.x, y: lp.y }) } })
+    }
+    ;(m.getSource('contour-labels') as GeoJSONSource).setData({ type: 'FeatureCollection', features: labelFeats })
     m.getContainer().setAttribute('data-curvas', String(p.contours.length))
     const lotFeatures: Feature[] = []
     if (p.lot.length > 2) {

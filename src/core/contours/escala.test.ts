@@ -9,6 +9,7 @@ import {
   usoDelDato,
 } from './escala'
 import { labelHeight, labelPlacements } from './labels'
+import { longitudPolilinea } from '../envelope/polygon'
 
 const TERRARIUM = { kind: 'DSM' as const, nominalResolutionM: 30 }
 const dato = (r: number) => ({ kind: 'DSM' as const, nominalResolutionM: r })
@@ -83,31 +84,56 @@ describe('rótulos de curvas maestras', () => {
     expect(labelHeight(100)).toBe(0.5) // 0,625 → 0,5
   })
 
-  it('recta de 100 m, texto de 1 m: un rótulo cada ~40 m, repartidos', () => {
+  it('recta de 100 m: un rótulo (una cada ~150 m), a media curva', () => {
     const ls = labelPlacements({ level: 100, closed: false, points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] }, 1)
-    expect(ls).toEqual([
-      { x: 25, y: 0, angleDeg: 0 },
-      { x: 75, y: 0, angleDeg: 0 },
-    ])
+    expect(ls).toEqual([{ x: 50, y: 0, angleDeg: 0 }])
+  })
+
+  it('una cada ~150 m, al menos una sobre 30 m, ninguna bajo 30 m ni bajo el ancho del texto', () => {
+    const recta = (len: number) => ({ level: 100, closed: false, points: [{ x: 0, y: 0 }, { x: len, y: 0 }] })
+    expect(labelPlacements(recta(20), 1, '100')).toHaveLength(0) // < 30 m
+    expect(labelPlacements(recta(31), 1, '100')).toHaveLength(1) // > 30 m → al menos una
+    expect(labelPlacements(recta(150), 1, '100')).toHaveLength(1)
+    expect(labelPlacements(recta(320), 1, '100')).toHaveLength(2) // round(320/150) = 2
+    expect(labelPlacements(recta(40), 30, '100')).toHaveLength(0) // texto «100» a 30 m de alto mide 54 m > 40 m
   })
 
   it('el texto queda siempre legible: giro en (−90°, 90°]', () => {
     const abajo = labelPlacements({ level: 1, closed: false, points: [{ x: 0, y: 100 }, { x: 0, y: 0 }] }, 1)
-    expect(abajo.map((l) => [l.x, l.y, l.angleDeg])).toEqual([[0, 75, 90], [0, 25, 90]]) // −90° → 90°
+    expect(abajo.map((l) => [l.x, l.y, l.angleDeg])).toEqual([[0, 50, 90]]) // −90° → 90°
     const izq = labelPlacements({ level: 1, closed: false, points: [{ x: 100, y: 0 }, { x: 0, y: 0 }] }, 1)
-    expect(izq.map((l) => [l.x, l.angleDeg])).toEqual([[75, 0], [25, 0]]) // 180° → 0°
+    expect(izq.map((l) => [l.x, l.angleDeg])).toEqual([[50, 0]]) // 180° → 0°
   })
 
   it('curva cerrada: recorre también el tramo de cierre', () => {
-    // rectángulo 30 × 20 (perímetro 100): rótulos en s = 25 (lado sur) y s = 75 (lado norte, recorrido al oeste)
+    // rectángulo 30 × 20 (perímetro 100): un rótulo a s = 50 (vértice NE, recorriendo el lado norte)
     const ls = labelPlacements(
       { level: 1, closed: true, points: [{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 20 }, { x: 0, y: 20 }] },
       1,
     )
-    expect(ls.map((l) => [l.x, l.y, l.angleDeg])).toEqual([[25, 0, 0], [5, 20, 0]])
+    expect(ls.map((l) => [l.x, l.y, l.angleDeg])).toEqual([[30, 20, 90]])
   })
 
-  it('curvas cortas (< 6 alturas de texto) no se rotulan', () => {
+  it('curvas más cortas que 30 m no se rotulan', () => {
     expect(labelPlacements({ level: 1, closed: false, points: [{ x: 0, y: 0 }, { x: 5, y: 0 }] }, 1)).toEqual([])
+  })
+
+  it('ladera sintética 200×200: cantidad de rótulos acotada y el criterio por curva', () => {
+    const g = rectGrid({ minX: 0, minY: 0, maxX: 200, maxY: 200 }, 2, { source: 'x', kind: 'DSM', nominalResolutionM: 30 }, (x, y) => 60 - Math.hypot(x - 100, y - 100) * 0.25)
+    const { min, max } = gridStats(g)
+    const lineas = isolines(g, contourLevels(min, max, 5))
+    const height = labelHeight(200) // 200 / 160 = 1,25 → 1
+    let total = 0
+    for (const c of lineas) {
+      const pts = c.closed ? [...c.points, c.points[0]] : c.points
+      const L = longitudPolilinea(pts)
+      const nlab = labelPlacements(c, height, '00').length
+      total += nlab
+      if (L <= 30) expect(nlab).toBe(0)
+      else expect(nlab).toBeGreaterThanOrEqual(1) // sobre 30 m → al menos una
+      expect(nlab).toBe(Math.max(1, Math.round(L / 150)) * (L > 30 ? 1 : 0))
+    }
+    expect(total).toBeGreaterThan(0)
+    expect(total).toBeLessThanOrEqual(40) // acotado
   })
 })
