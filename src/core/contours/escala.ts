@@ -30,8 +30,11 @@ export function curvasPorDesnivel(desnivel: number, e: number): number {
 }
 
 /**
- * Equidistancia preseleccionada. Si ninguna candidata da entre 5 y 20 curvas, se toma la primera que no pasa de 20
- * (en un área casi plana, la mínima confiable); si todas pasan de 20, la mayor.
+ * Equidistancia preseleccionada. NUNCA por debajo de la mínima confiable (las candidatas ya se filtran a `≥ min`),
+ * aunque eso dé menos de 5 curvas: con poco desnivel para la resolución del dato se toma la mínima confiable (la menor
+ * candidata), y el panel avisa «poco desnivel para esta resolución: N curvas». Si todas las candidatas pasan de 20
+ * curvas, se toma la mayor. Las equidistancias menores a la confiable siguen disponibles en el selector, a mano y con el
+ * aviso de precisión aparente — no se preseleccionan solas.
  */
 export function preseleccionEquidistancia(meta: MetaDato, desnivel: number): { equidistancia: number; curvas: number } {
   const min = equidistanciaMinimaConfiable(meta)

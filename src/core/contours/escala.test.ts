@@ -47,6 +47,11 @@ describe('preselección: la menor ≥ mínima confiable que dé entre 5 y 20 cur
     expect(preseleccionEquidistancia(TERRARIUM, 2000)).toEqual({ equidistancia: 50, curvas: 40 })
   })
 
+  it('nunca por debajo de la mínima confiable, aunque resulten menos de 5 curvas', () => {
+    // dato de 30 m (mínima confiable 5 m) con 12 m de desnivel → 5 m, 2 curvas (no 2 m ni 1 m)
+    expect(preseleccionEquidistancia(dato(30), 12)).toEqual({ equidistancia: 5, curvas: 2 })
+  })
+
   it('curvas según el desnivel', () => {
     expect(curvasPorDesnivel(25, 5)).toBe(5)
     expect(curvasPorDesnivel(24.9, 5)).toBe(4)

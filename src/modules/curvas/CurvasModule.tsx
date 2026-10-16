@@ -8,6 +8,7 @@ import { contourLevels, isolines } from '../../core/contours/isolines'
 import {
   contarNiveles,
   curvasPorDesnivel,
+  CURVAS_MIN,
   equidistanciaMinimaConfiable,
   MAX_NIVELES,
   PRESELECCION,
@@ -234,6 +235,11 @@ export function CurvasModule() {
                   desnivel: <b data-testid="equidistancia-sugerida">{fmtNum(pre.equidistancia)} m</b> ({pre.curvas} curvas en{' '}
                   {fmtNum(st.max - st.min, 1)} m).
                 </p>
+                {pre.curvas < CURVAS_MIN && (
+                  <p className="text-slate-800" data-testid="equidistancia-pocas">
+                    Poco desnivel para esta resolución: {pre.curvas} {pre.curvas === 1 ? 'curva' : 'curvas'}.
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-xs text-slate-600">
