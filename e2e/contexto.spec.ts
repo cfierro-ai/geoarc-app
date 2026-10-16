@@ -55,7 +55,7 @@ test('curvas: contexto de OSM en el mapa (capas activables), en el DXF y guardad
   expect(dxf).toContain('\n1\n\\U+00A9 OpenStreetMap contributors (ODbL)\n')
 
   // OBJ: malla 3D con grupos terreno y edificaciones, vértices y caras; cada edificio cerrado (arista en 2 caras)
-  const [obj] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Descargar malla 3D (OBJ)' }).click()])
+  const [obj] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Descargar malla (OBJ)' }).click()])
   await obj.saveAs('e2e/capturas/23-contexto.obj')
   const malla = await readFile(await obj.path(), 'utf8')
   expect(malla).toContain('g terreno')

@@ -40,8 +40,8 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   await page.screenshot({ path: 'e2e/capturas/08-area-dibujo.png' })
   await page.mouse.click(cx + 340, cy - 340)
 
-  // sin botón: el terreno se descarga al cerrar el área
-  await expect(page.getByTestId('dem-info')).toContainText('Terrarium')
+  // sin botón: el terreno se descarga al cerrar el área (timeout holgado: la suite completa carga CPU por el GLB)
+  await expect(page.getByTestId('dem-info')).toContainText('Terrarium', { timeout: 20_000 })
   expect(n.terrarium).toBeGreaterThan(0)
   expect(n.copernicus).toBe(0)
   await expect(page.getByTestId('area-info')).toContainText(/\d+ × \d+ m · [\d,]+ ha · celda [\d,]+ m/)
