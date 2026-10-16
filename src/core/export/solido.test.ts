@@ -1,5 +1,6 @@
 import type { XYZ } from '../geo/local'
-import { edificioSolido, murosEdificio, techoEdificio, triangular, type Tri3 } from './solido'
+import { agruparAnillos } from '../envelope/polygon'
+import { edificioSolido, murosEdificio, techoCaras, techoEdificio, triangular, type Tri3 } from './solido'
 
 const CUADRADO = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]
 const HUECO = [{ x: 4, y: 4 }, { x: 6, y: 4 }, { x: 6, y: 6 }, { x: 4, y: 6 }]
@@ -76,5 +77,43 @@ describe('sólido de un edificio', () => {
     expect(cerrado(s)).toBe(true)
     // paredes: 4 exteriores + 4 del patio = 8 cuadriláteros → 16 triángulos; piso y techo: 8 cada uno (96 m²)
     expect(s).toHaveLength(16 + 16)
+  })
+})
+
+describe('edificios de un multipolígono (teselas fusionadas por altura)', () => {
+  it('dos anillos disjuntos → dos edificios; ningún triángulo cruza el espacio entre ambos', () => {
+    const A = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]
+    const B = [{ x: 20, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 10 }, { x: 20, y: 10 }]
+    const edif = agruparAnillos([A, B])
+    expect(edif).toHaveLength(2)
+    expect(edif.every((e) => e.huecos.length === 0)).toBe(true)
+    // triangular cada edificio por separado: ningún triángulo cae en el vacío entre ambos (10 < x < 20)
+    const tris = edif.flatMap((e) => triangular(e.anillo, e.huecos))
+    expect(tris.some(([a, b, c]) => (a.x + b.x + c.x) / 3 > 10 && (a.x + b.x + c.x) / 3 < 20)).toBe(false)
+    expect(areaTris(tris)).toBeCloseTo(200, 6) // 2 × 100 m²
+  })
+
+  it('un anillo con un patio → un edificio con el hueco asignado por contención', () => {
+    const edif = agruparAnillos([CUADRADO, HUECO])
+    expect(edif).toHaveLength(1)
+    expect(edif[0].huecos).toHaveLength(1)
+    expect(areaTris(triangular(edif[0].anillo, edif[0].huecos))).toBeCloseTo(96, 6)
+  })
+})
+
+describe('techo con aristas interiores invisibles (en planta se ve solo el contorno)', () => {
+  // aristas reales visibles de un 3DFACE triangular = las de los bits 1, 2, 8 que NO están en la máscara `ocultas`
+  const visiblesReales = (caras: { ocultas: number }[]) =>
+    caras.reduce((s, { ocultas }) => s + [1, 2, 8].filter((b) => !(ocultas & b)).length, 0)
+
+  it('cuadrado (2 triángulos): solo las 4 aristas del borde quedan visibles; la diagonal, oculta', () => {
+    const caras = techoCaras(CUADRADO, [], 100, 3)
+    expect(caras).toHaveLength(2)
+    for (const { ocultas } of caras) expect(ocultas & 4).toBe(4) // la arista 3→4 (degenerada) siempre oculta
+    expect(visiblesReales(caras)).toBe(4) // las 4 aristas del contorno del cuadrado
+  })
+
+  it('con un patio: visibles las 4 del contorno + las 4 del patio (8); las diagonales, ocultas', () => {
+    expect(visiblesReales(techoCaras(CUADRADO, [HUECO], 100, 3))).toBe(8)
   })
 })

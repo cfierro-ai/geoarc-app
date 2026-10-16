@@ -56,6 +56,35 @@ export function techoEdificio(anillo: XY[], huecos: XY[][], z0: number, altura: 
   ] as Tri3)
 }
 
+/** Triángulo del techo con el código 70 del 3DFACE: qué aristas van invisibles. */
+export interface CaraTecho {
+  tri: Tri3
+  /** Máscara de aristas invisibles del 3DFACE (1 = 1→2, 2 = 2→3, 4 = 3→4 degenerada, 8 = 4→1). */
+  ocultas: number
+}
+
+/**
+ * Techo como 3DFACE con las aristas INTERIORES (las diagonales que la triangulación agrega) marcadas invisibles, para
+ * que en planta se vea solo el contorno del edificio y sus patios, no la malla de triángulos. Una arista compartida por
+ * dos triángulos es interior; una que aparece una sola vez está en el borde (contorno o patio) y queda visible.
+ */
+export function techoCaras(anillo: XY[], huecos: XY[][], z0: number, altura: number): CaraTecho[] {
+  const tris = techoEdificio(anillo, huecos, z0, altura)
+  const key = (p: XYZ) => `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)}`
+  const arista = (a: XYZ, b: XYZ) => [key(a), key(b)].sort().join('|')
+  const cuenta = new Map<string, number>()
+  for (const [a, b, c] of tris) for (const [p, q] of [[a, b], [b, c], [c, a]] as [XYZ, XYZ][]) cuenta.set(arista(p, q), (cuenta.get(arista(p, q)) ?? 0) + 1)
+  const interior = (a: XYZ, b: XYZ) => (cuenta.get(arista(a, b)) ?? 0) > 1
+  return tris.map(([a, b, c]) => {
+    // el 3DFACE se emite con la 4ª esquina = 3ª: la arista 3→4 (bit 4) es degenerada y siempre va oculta
+    let ocultas = 4
+    if (interior(a, b)) ocultas |= 1 // arista 1→2
+    if (interior(b, c)) ocultas |= 2 // arista 2→3
+    if (interior(c, a)) ocultas |= 8 // arista 4→1 (= 3→1)
+    return { tri: [a, b, c], ocultas }
+  })
+}
+
 /**
  * Edificio como sólido cerrado (piso + muros + techo) en triángulos. Para la malla OBJ y para verificar el cierre:
  * cada arista pertenece a exactamente dos caras. El piso repite la triangulación del techo con el sentido invertido.

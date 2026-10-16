@@ -1,17 +1,18 @@
-import { classifyRings, VectorTile } from '@mapbox/vector-tile'
+import { VectorTile } from '@mapbox/vector-tile'
 import { PbfReader } from 'pbf'
 import type { LocalFrame, LonLat, XY } from '../geo/local'
 import { lonLatToTile } from '../dem/terrarium'
 import { clipPolyline } from '../contours/clip'
-import { area } from '../envelope/polygon'
+import { agruparAnillos, area } from '../envelope/polygon'
 import { unirTramos, type BBoxLonLat, type Contexto, type Edificacion, type Via } from './contexto'
 
 /**
  * Respaldo del contexto: teselas vectoriales de OpenFreeMap (esquema OpenMapTiles, z14).
  * Lo medido en el spike (2026-10-13, Temuco): las vías traen el id OSM y una vía partida entre teselas conserva su id,
  * así que se une por id. Los edificios, en cambio, vienen FUSIONADOS por altura (`render_height`): una entidad reúne
- * cientos de edificios y su id no identifica a ninguno. Cada polígono se toma como una edificación, recortado al borde
- * de su tesela: un edificio que cruza el borde queda en dos piezas.
+ * cientos de edificios y su id no identifica a ninguno. Ese multipolígono se separa en edificios individuales por
+ * contención (`agruparAnillos`) antes de triangular — nunca se trata un conjunto de anillos disjuntos como un solo
+ * polígono —, recortado al borde de su tesela: un edificio que cruza el borde queda en dos piezas.
  */
 export const ZOOM_TESELAS = 14
 
@@ -79,13 +80,19 @@ export function contextoDesdeTeselas(teselas: TeselaMvt[], frame: LocalFrame, fe
         const f = b.feature(i)
         if (f.type !== 3) continue
         const altura = Number(f.properties.render_height) || 0
-        classifyRings(f.loadGeometry()).forEach((poly, k) => {
-          const [ext, ...huecos] = poly.map((r) => recortarAnillo(r.map((p) => ({ x: p.x, y: p.y })), b.extent))
-          if (ext.length < 3 || area(ext) < 1) return
+        // el multipolígono (edificios fusionados por altura) se recorta al borde de la tesela, se lleva al marco local y
+        // se separa en edificios individuales por contención ANTES de triangular (nunca anillos disjuntos como uno solo)
+        const anillos = f
+          .loadGeometry()
+          .map((r) => recortarAnillo(r.map((p) => ({ x: p.x, y: p.y })), b.extent))
+          .filter((r) => r.length >= 3)
+          .map((r) => r.map(toL))
+        agruparAnillos(anillos).forEach((ed, k) => {
+          if (area(ed.anillo) < 1) return
           edificaciones.push({
             id: `t${t.z}/${t.x}/${t.y}-${f.id ?? i}-${k + 1}`,
-            anillo: ext.map(toL),
-            huecos: huecos.filter((h) => h.length > 2 && area(h) >= 1).map((h) => h.map(toL)),
+            anillo: ed.anillo,
+            huecos: ed.huecos.filter((h) => area(h) >= 1),
             altura: altura > 0 ? altura : 3,
             alturaFuente: 'tesela',
           })

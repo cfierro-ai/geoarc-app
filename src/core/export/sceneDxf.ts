@@ -6,7 +6,7 @@ import { cotaLabel } from '../contours/escala'
 import { labelHeight, labelPlacements } from '../contours/labels'
 import { bbox, densificarAnillo, pointInPolygon } from '../envelope/polygon'
 import { Dxf2000Writer } from './dxf2000'
-import { murosEdificio, techoEdificio } from './solido'
+import { murosEdificio, techoCaras } from './solido'
 import { elementosReferencia, longitudEscala } from './referencia'
 import { ATRIBUCION_OSM, esAlturaConocida, type Contexto, type Edificacion } from '../contexto/contexto'
 
@@ -169,5 +169,6 @@ export function edificacionDxf(w: Dxf2000Writer, layer: string, e: Edificacion, 
   const huecosU = e.huecos.map((h) => h.map(U))
   for (const r of [anilloU, ...huecosU]) w.lwpolyline(layer, r, true, z0)
   for (const q of murosEdificio(anilloU, huecosU, z0, e.altura)) w.face3d(layer, q[0], q[1], q[2], q[3])
-  for (const t of techoEdificio(anilloU, huecosU, z0, e.altura)) w.face3d(layer, t[0], t[1], t[2])
+  // techo: 3DFACE con las aristas interiores invisibles (en planta se ve solo el contorno, no la triangulación)
+  for (const { tri, ocultas } of techoCaras(anilloU, huecosU, z0, e.altura)) w.face3d(layer, tri[0], tri[1], tri[2], undefined, ocultas)
 }

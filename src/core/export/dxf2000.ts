@@ -87,14 +87,18 @@ export class Dxf2000Writer {
     return this
   }
 
-  /** 3DFACE (triángulo si d = c): muros y techos de edificios, caras de la envolvente. */
-  face3d(layer: string, a: XYZ, b: XYZ, c: XYZ, d: XYZ = c): this {
+  /**
+   * 3DFACE (triángulo si d = c): muros y techos de edificios, caras de la envolvente. `ocultas` es la máscara del
+   * código 70 (aristas invisibles: 1 = 1→2, 2 = 2→3, 4 = 3→4, 8 = 4→1), para ocultar las diagonales de la triangulación.
+   */
+  face3d(layer: string, a: XYZ, b: XYZ, c: XYZ, d: XYZ = c, ocultas = 0): this {
     const L = sanitize(layer)
     const e: (string | number)[] = [0, '3DFACE', 5, this.handle(), 330, H.mspace, 100, 'AcDbEntity', 8, L, 100, 'AcDbFace']
     ;[a, b, c, d].forEach((p, k) => {
       e.push(10 + k, n(p.x), 20 + k, n(p.y), 30 + k, n(p.z))
       this.see(p.x, p.y, p.z)
     })
+    if (ocultas) e.push(70, ocultas)
     this.entities.push(pairs(e))
     return this
   }

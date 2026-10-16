@@ -91,6 +91,33 @@ export function cleanRing(pts: XY[], tol = 0.3): XY[] {
   return out
 }
 
+/**
+ * Agrupa una lista de anillos (p. ej. los de un multipolígono de teselas, fusionado por altura) en edificios
+ * individuales: cada anillo exterior con sus patios. La clasificación es por CONTENCIÓN (no por el sentido absoluto):
+ * la profundidad de anidamiento de un anillo = cuántos otros lo contienen; profundidad par → exterior, impar → hueco.
+ * Cada hueco se asigna al exterior más pequeño que lo contiene. Así dos anillos disjuntos dan dos edificios y nunca se
+ * triangula un conjunto de anillos disjuntos como un solo polígono.
+ */
+export function agruparAnillos(anillos: XY[][]): { anillo: XY[]; huecos: XY[][] }[] {
+  const rings = anillos.filter((r) => r.length >= 3)
+  const rep = rings.map((r) => r[0]) // punto representativo (primer vértice)
+  const areas = rings.map((r) => area(r))
+  const depth = rings.map((_, i) => rings.reduce((d, r, j) => (j !== i && pointInPolygon(rep[i], r) ? d + 1 : d), 0))
+  const exteriores = rings.map((_, i) => i).filter((i) => depth[i] % 2 === 0)
+  const edificios = exteriores.map((i) => ({ anillo: rings[i], huecos: [] as XY[][] }))
+  // cada anillo de profundidad impar (hueco) va al exterior más pequeño que lo contiene
+  rings.forEach((r, i) => {
+    if (depth[i] % 2 === 0) return
+    let best = -1
+    for (let k = 0; k < exteriores.length; k++) {
+      const e = exteriores[k]
+      if (pointInPolygon(rep[i], rings[e]) && (best < 0 || areas[e] < areas[exteriores[best]])) best = k
+    }
+    if (best >= 0) edificios[best].huecos.push(r)
+  })
+  return edificios
+}
+
 export function bbox(poly: XY[]) {
   return {
     minX: Math.min(...poly.map((p) => p.x)),
