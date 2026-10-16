@@ -3,6 +3,7 @@ import type { HeightGrid } from '../dem/grid'
 import { pointInRect, rectCorners, type Rect } from '../dem/area'
 import { densificarAnillo, pointInPolygon } from '../envelope/polygon'
 import { edificioSolido } from './solido'
+import { mallaTerreno, pasoDensidad } from './glbCore'
 import type { Edificacion } from '../contexto/contexto'
 
 /**
@@ -57,6 +58,8 @@ export interface SceneForObj {
   edificaciones?: Edificacion[]
   /** Cota del terreno (coordenadas locales) para apoyar los edificios. */
   cotaBase?: (p: XY) => number
+  /** Densidad de la malla: objetivo de celdas en el lado mayor. Sin él, la grilla completa. */
+  celdasLado?: number
 }
 
 export function sceneToObj(s: SceneForObj): string {
@@ -70,27 +73,17 @@ export function sceneToObj(s: SceneForObj): string {
     return Number.isFinite(z) ? z : 0
   }
 
-  // terreno: dos triángulos por celda; se conserva el triángulo solo si sus tres vértices están dentro del área
+  // terreno: malla recortada al área y submuestreada a la densidad (misma lógica que el GLB)
   w.group('terreno')
-  const g = s.grid
-  const node = (i: number, j: number) => ({ x: g.x0 + i * g.cell, y: g.y0 + j * g.cell, z: g.z[j * g.nx + i] })
-  const emitTri = (a: ReturnType<typeof node>, b: typeof a, c: typeof a) => {
-    if ([a, b, c].some((p) => Number.isNaN(p.z) || !dentro(p))) return
-    const idx = [a, b, c].map((p) => {
+  const pasoMalla = s.celdasLado ? pasoDensidad(s.grid, s.celdasLado) : 1
+  const malla = mallaTerreno(s.grid, dentro, pasoMalla)
+  for (const [a, b, c] of malla.tris) {
+    const idx = [malla.pos[a], malla.pos[b], malla.pos[c]].map((p) => {
       const u = U(p)
       return w.vertex(u.x, u.y, p.z)
     })
     w.face(idx[0], idx[1], idx[2])
   }
-  for (let j = 0; j < g.ny - 1; j++)
-    for (let i = 0; i < g.nx - 1; i++) {
-      const a = node(i, j)
-      const b = node(i + 1, j)
-      const c = node(i + 1, j + 1)
-      const d = node(i, j + 1)
-      emitTri(a, b, d)
-      emitTri(b, c, d)
-    }
 
   // edificios: sólidos cerrados (piso + muros + techo) desde la cota más baja del terreno bajo la huella
   if (s.edificaciones?.length) {
@@ -108,8 +101,8 @@ export function sceneToObj(s: SceneForObj): string {
   // contorno del área apoyado sobre el terreno (polilínea `l`), igual que el AREA del DXF: marca el límite del lote
   w.group('area')
   const anillo = s.areaPolygon ?? rectCorners(s.area)
-  const paso = s.grid.cell > 0 ? s.grid.cell : Math.max(1, Math.max(s.area.maxX - s.area.minX, s.area.maxY - s.area.minY) / 200)
-  const denso = s.cotaBase ? densificarAnillo(anillo, true, paso) : anillo
+  const pasoContorno = (s.grid.cell > 0 ? s.grid.cell : Math.max(1, Math.max(s.area.maxX - s.area.minX, s.area.maxY - s.area.minY) / 200)) * pasoMalla
+  const denso = s.cotaBase ? densificarAnillo(anillo, true, pasoContorno) : anillo
   const idxArea = denso.map((q) => {
     const u = U(q)
     return w.vertex(u.x, u.y, base(q))

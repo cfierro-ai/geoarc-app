@@ -75,6 +75,56 @@ export const EXPORT_ORIGINS: { id: ExportOrigin; label: string; hint: string }[]
 /** Sufijo del nombre de archivo según el origen: «_local» o «_UTM». */
 export const origenSufijo = (o: ExportOrigin) => (o === 'local' ? '_local' : '_UTM')
 
+/**
+ * Densidad de la malla 3D (GLB y OBJ): objetivo de celdas en el lado MAYOR del área. La grilla del dato se submuestrea a
+ * esa densidad. Más densidad = más detalle y archivo más grande. Para ajustar los niveles, cambiar `celdasLado` aquí.
+ */
+export type DensidadId = 'gruesa' | 'media' | 'fina'
+export interface DensidadInfo {
+  id: DensidadId
+  label: string
+  celdasLado: number
+  hint: string
+}
+export const DENSIDADES: DensidadInfo[] = [
+  { id: 'gruesa', label: 'Gruesa', celdasLado: 60, hint: 'Pocos triángulos: liviana, para corte láser o impresión 3D.' },
+  { id: 'media', label: 'Media', celdasLado: 120, hint: 'Equilibrio entre detalle y tamaño.' },
+  { id: 'fina', label: 'Fina', celdasLado: 240, hint: 'Más detalle; archivo más grande.' },
+]
+export const densidadDe = (id: DensidadId) => DENSIDADES.find((d) => d.id === id) ?? DENSIDADES[1]
+
+/** Textura del modelo 3D (GLB): mosaico de teselas raster (sin reproyectar), o sin textura. Por defecto satelital. */
+export type TexturaId = 'satelital' | 'osm' | 'ninguna'
+export interface TexturaInfo {
+  id: TexturaId
+  label: string
+  atribucion?: string
+  /** Plantilla de URL de teselas; {z}/{x}/{y}. Esri usa {z}/{y}/{x}. */
+  urlPlantilla?: string
+  /** Zoom máximo con imagen de la fuente (sobre eso el mosaico se queda más chico que el objetivo de 2048–4096 px). */
+  maxZoom?: number
+}
+export const TEXTURAS: TexturaInfo[] = [
+  {
+    id: 'satelital',
+    label: 'Satelital (Esri)',
+    atribucion: 'Imágenes: Esri, Maxar, Earthstar Geographics y la comunidad de usuarios GIS',
+    urlPlantilla: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    // World Imagery tiene imagen hasta ~z19 en Chile (z20+ devuelve «Map data not yet available»); sobre eso, mosaico más chico
+    maxZoom: 19,
+  },
+  { id: 'osm', label: 'Mapa (OSM)', atribucion: '© OpenStreetMap contributors', urlPlantilla: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19 },
+  { id: 'ninguna', label: 'Sin textura' },
+]
+export const texturaDe = (id: TexturaId) => TEXTURAS.find((t) => t.id === id) ?? TEXTURAS[0]
+
+/**
+ * Nota permanente de la tarjeta «Modelo 3D (GLB)»: con qué se abre. Una sola constante para ajustarla cuando Chris
+ * confirme las versiones de SketchUp.
+ */
+export const GLB_NOTA_APERTURA =
+  'Se abre con: SketchUp Pro de escritorio (Archivo → Importar), Blender (gratuito) y el visor 3D de Windows. Si tu SketchUp no lo importa, Blender lo abre y lo convierte.'
+
 /** Terreno del estudio de sombras. */
 export type TerrainMode = 'plano' | 'sitio'
 

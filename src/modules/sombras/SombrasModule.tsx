@@ -17,8 +17,10 @@ import { SiteSection } from '../../app/components/SiteSection'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
 import { btn, btnPrimary, input, ModulePanel, Note, Num, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
-import { edgeColor, exampleLot, fmt, fmtNum, MAX_HEIGHT_COLOR, origenSufijo, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
+import { densidadDe, edgeColor, exampleLot, fmt, fmtNum, GLB_NOTA_APERTURA, MAX_HEIGHT_COLOR, origenSufijo, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
 import { DescargaTarjetas } from '../../app/components/DescargaTarjetas'
+import { TexturaSelector } from '../../app/components/DescargaTextura'
+import { contenidoGlb, estimarGlb, exportarGlb, metaMalla } from '../../app/exportGlb'
 import { useMeasure } from '../../app/useMeasure'
 import { actions, gridCoversLot, useAppState } from '../../app/store'
 
@@ -60,6 +62,9 @@ export function SombrasModule() {
   const contexto = useAppState((s) => s.contexto)
   const capas = useAppState((s) => s.capas)
   const exportOrigin = useAppState((s) => s.exportOrigin)
+  const exportDensidad = useAppState((s) => s.exportDensidad)
+  const exportTextura = useAppState((s) => s.exportTextura)
+  const [glbAviso, setGlbAviso] = useState<string | null>(null)
   const ctxDatos = contexto.estado === 'listo' ? contexto.datos : null
   const { terrainMode, lot, edges, maxHeight, didactic, exaggeration } = sombras
   const [mode, setMode] = useState<MapMode>('none')
@@ -168,24 +173,41 @@ export function SombrasModule() {
     const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
     download(`geoarc_sombras_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.dxf`, dxf, 'application/dxf')
   }
+  const gridRect = () => (grid ? { minX: grid.x0, minY: grid.y0, maxX: grid.x0 + (grid.nx - 1) * grid.cell, maxY: grid.y0 + (grid.ny - 1) * grid.cell } : null)
   const exportObj = () => {
     if (!grid) return
-    const gr = { minX: grid.x0, minY: grid.y0, maxX: grid.x0 + (grid.nx - 1) * grid.cell, maxY: grid.y0 + (grid.ny - 1) * grid.cell }
     const obj = sceneToObj({
       frame,
       grid,
-      area: gr,
+      area: gridRect()!,
       origin: exportOrigin,
       edificaciones: capas.edificaciones ? ctxDatos?.edificaciones : undefined,
       cotaBase: (p) => sampleClamped(grid, p.x, p.y),
+      celdasLado: densidadDe(exportDensidad).celdasLado,
     })
     const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
     download(`geoarc_sombras_malla_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.obj`, obj, 'text/plain')
+  }
+  const exportGlb = async () => {
+    if (!grid) return
+    const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
+    const r = await exportarGlb(
+      { frame, grid, area: gridRect()!, origin: exportOrigin, densidad: exportDensidad, edificaciones: capas.edificaciones ? ctxDatos?.edificaciones : undefined, vias: ctxDatos?.vias, cotaBase: (p) => sampleClamped(grid, p.x, p.y) },
+      exportTextura,
+      `geoarc_sombras_modelo3d_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.glb`,
+    )
+    setGlbAviso(r && r.fallos ? `${r.fallos} de ${r.total} teselas no cargaron: esas zonas quedan en gris.` : null)
   }
   const exportPng = () => {
     const c = document.querySelector<HTMLCanvasElement>('#geoarc-3d canvas, canvas#geoarc-3d')
     c?.toBlob((b) => b && download('geoarc_sombras_3d.png', b, 'image/png'))
   }
+
+  const densidadLabel = densidadDe(exportDensidad).label
+  const edifGlb = capas.edificaciones ? ctxDatos?.edificaciones : undefined
+  const escenaGlb = grid ? { frame, grid, area: gridRect()!, origin: exportOrigin, densidad: exportDensidad, edificaciones: edifGlb, vias: ctxDatos?.vias, cotaBase: (p: XY) => sampleClamped(grid, p.x, p.y) } : null
+  const glbEst = escenaGlb ? estimarGlb(escenaGlb, exportTextura) : null
+  const objEst = escenaGlb ? estimarGlb(escenaGlb, 'ninguna') : null
 
   return (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -357,7 +379,6 @@ export function SombrasModule() {
                   titulo: 'Plano (DXF 2000)',
                   formato: 'DXF 2000 (AC1015)',
                   boton: 'Descargar DXF 2000',
-                  destacado: true,
                   onDescargar: exportDxf,
                   testId: 'tarjeta-dxf',
                   contenido: [
@@ -370,9 +391,23 @@ export function SombrasModule() {
                   ],
                 },
                 {
-                  titulo: 'Malla 3D (OBJ)',
+                  titulo: 'Modelo 3D (GLB)',
+                  formato: 'GLB (glTF binario)',
+                  boton: 'Descargar modelo 3D (GLB)',
+                  destacado: true,
+                  onDescargar: exportGlb,
+                  disabled: !grid,
+                  testId: 'tarjeta-glb',
+                  contenido: contenidoGlb(exportTextura, edifGlb?.length ?? 0, ctxDatos?.vias.length ?? 0),
+                  meta: glbEst ? metaMalla(glbEst, densidadLabel) : undefined,
+                  extra: <TexturaSelector />,
+                  info: GLB_NOTA_APERTURA,
+                  nota: glbAviso ?? undefined,
+                },
+                {
+                  titulo: 'Malla (OBJ, sin textura)',
                   formato: 'OBJ (malla de triángulos)',
-                  boton: 'Descargar malla 3D (OBJ)',
+                  boton: 'Descargar malla (OBJ)',
                   onDescargar: exportObj,
                   disabled: !grid,
                   testId: 'tarjeta-obj',
@@ -380,6 +415,7 @@ export function SombrasModule() {
                     terrainMode === 'plano' ? 'Terreno plano (cota 0)' : 'Terreno del estudio',
                     ...(capas.edificaciones && ctxDatos?.edificaciones.length ? [`${ctxDatos.edificaciones.length} edificios (sólidos)`] : []),
                   ],
+                  meta: objEst ? metaMalla(objEst, densidadLabel, false) : undefined,
                 },
               ]}
             />
