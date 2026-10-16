@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { capasDxf, centroMapa, interceptarContexto, interceptarMapaBase, interceptarTerrarium, lwpolilineasDxf } from './util'
+import { capasDxf, centroMapa, interceptarContexto, interceptarMapaBase, interceptarTerrarium, lwpolilineasDxf, polilineasDxf } from './util'
 
 /**
  * Módulo de curvas, flujo del profesor: ubicar el sitio → dibujar el área → las curvas aparecen.
@@ -86,7 +86,7 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   // una curva maestra lleva la cota 200 como rótulo (TEXT en ETIQUETAS) y como elevación de la LWPOLYLINE
   expect(dxf).toContain('8\nETIQUETAS\n')
   expect(dxf).toContain('\n1\n200\n')
-  const area = lwpolilineasDxf(dxf, 'AREA')
+  const area = polilineasDxf(dxf, 'AREA') // AREA es POLYLINE 3D apoyada sobre el terreno
   expect(area).toHaveLength(1)
   expect(Math.min(...area[0].flatMap((p) => [p.x, p.y]))).toBeCloseTo(0, 2) // esquina SO en el origen
   expect(lwpolilineasDxf(dxf, 'CURVAS_MAESTRAS').length).toBeGreaterThan(0)
@@ -100,7 +100,7 @@ test('curvas: área de dos clics, Terrarium automático, equidistancia preselecc
   expect(descargaUtm.suggestedFilename()).toMatch(/_UTM18S_UTM\.dxf$/)
   const dxfUtm = await readFile(await descargaUtm.path(), 'utf8')
   expect(dxfUtm).not.toContain('Origen local')
-  expect(lwpolilineasDxf(dxfUtm, 'AREA')[0][0].x).toBeGreaterThan(100000)
+  expect(polilineasDxf(dxfUtm, 'AREA')[0][0].x).toBeGreaterThan(100000)
 
   expect(errors).toEqual([])
 })

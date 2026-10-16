@@ -29,6 +29,16 @@ const first = (e: Ent, c: number) => e.g.get(c)?.[0]
 const all = (e: Ent, c: number) => e.g.get(c) ?? []
 const onLayer = (ents: Ent[], type: string, layer: string) => ents.filter((e) => e.type === type && first(e, 8) === layer)
 
+/** Vértices (x, y, z) de la POLYLINE 3D de una capa: sus entidades VERTEX, en orden, hasta el SEQEND. */
+function polyVerts(ents: Ent[], layer: string): { x: number; y: number; z: number }[] {
+  const k = ents.findIndex((e) => e.type === 'POLYLINE' && first(e, 8) === layer)
+  if (k < 0) return []
+  const out: { x: number; y: number; z: number }[] = []
+  for (let j = k + 1; j < ents.length && ents[j].type === 'VERTEX'; j++)
+    out.push({ x: +first(ents[j], 10)!, y: +first(ents[j], 20)!, z: +first(ents[j], 30)! })
+  return out
+}
+
 describe('escena → DXF 2000', () => {
   const frame = createLocalFrame({ lon: -72.598, lat: -38.739 })
   const E = (x: number) => (frame.originE + x).toFixed(3)
@@ -62,21 +72,49 @@ describe('escena → DXF 2000', () => {
     for (const t of texts) expect([first(t, 1), first(t, 40), first(t, 50)]).toEqual(['100', '0.500', '0.000'])
     expect(texts.map((t) => first(t, 11))).toEqual([10, 30, 50, 70, 90].map(E))
 
-    // AREA: LWPOLYLINE cerrada (70 = 1), sin elevación (cota 0), 4 esquinas en UTM
-    const area = onLayer(ents, 'LWPOLYLINE', 'AREA')[0]
-    expect(first(area, 70)).toBe('1')
-    expect(area.g.has(38)).toBe(false)
-    expect(all(area, 10)).toEqual([0, 100, 100, 0].map(E))
-    expect(all(area, 20)).toEqual([0, 0, 60, 60].map(N))
+    // AREA: POLYLINE 3D cerrada (70 = 9), 4 esquinas en UTM a cota 0 (sin terreno)
+    const area = polyVerts(ents, 'AREA')
+    expect(first(onLayer(ents, 'POLYLINE', 'AREA')[0], 70)).toBe('9')
+    expect(area.map((p) => p.x.toFixed(3))).toEqual([0, 100, 100, 0].map(E))
+    expect(area.map((p) => p.y.toFixed(3))).toEqual([0, 0, 60, 60].map(N))
+    expect(area.every((p) => p.z === 0)).toBe(true)
   })
 
   it('área como polígono: AREA lleva los vértices del polígono', () => {
     const tri = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 60 }]
     const s = sceneToDxf({ frame, indexInterval: 5, contours: [], area: { minX: 0, minY: 0, maxX: 100, maxY: 60 }, areaPolygon: tri })
-    const area = onLayer(parse(s).ents, 'LWPOLYLINE', 'AREA')[0]
-    expect(first(area, 90)).toBe('3')
-    expect(all(area, 10)).toEqual(tri.map((p) => E(p.x)))
-    expect(all(area, 20)).toEqual(tri.map((p) => N(p.y)))
+    const area = polyVerts(parse(s).ents, 'AREA')
+    expect(area.map((p) => p.x.toFixed(3))).toEqual(tri.map((p) => E(p.x)))
+    expect(area.map((p) => p.y.toFixed(3))).toEqual(tri.map((p) => N(p.y)))
+  })
+
+  it('Z de AREA y REFERENCIA: apoyadas en el terreno, ningún vértice más de 1 m bajo la cota mínima', () => {
+    const area = { minX: 0, minY: 0, maxX: 100, maxY: 60 }
+    const s = sceneToDxf({
+      frame,
+      indexInterval: 5,
+      area,
+      contours: [],
+      origin: 'local',
+      demCell: 10,
+      cotaBase: (p) => 200 + 0.3 * p.x + 0.1 * p.y, // cota mínima 200 en (0,0), máxima 236 en (100,60)
+      demInfo: 'Terrarium · ~30 m',
+    })
+    const { ents } = parse(s)
+    const minZ = 200
+    // AREA: POLYLINE 3D densificada (más de 4 vértices), con la cota real del terreno en cada vértice
+    const av = polyVerts(ents, 'AREA')
+    expect(av.length).toBeGreaterThan(4)
+    expect(Math.min(...av.map((p) => p.z))).toBeGreaterThanOrEqual(minZ - 1)
+    expect(av.find((p) => p.x === 0 && p.y === 0)!.z).toBeCloseTo(200, 3)
+    // REFERENCIA: a la cota mínima redondeada hacia abajo (elevación 38 de las LWPOLYLINE y Z 30 de los TEXT)
+    const refZ = [
+      ...onLayer(ents, 'LWPOLYLINE', 'REFERENCIA').map((e) => +(first(e, 38) ?? '0')),
+      ...onLayer(ents, 'TEXT', 'REFERENCIA').map((e) => +(first(e, 30) ?? '0')),
+    ]
+    expect(refZ.length).toBeGreaterThan(0)
+    expect(refZ.every((z) => z >= minZ - 1 && z <= minZ)).toBe(true)
+    expect(refZ).toContain(200) // Math.floor(200)
   })
 
   it('contexto: EDIFICACIONES (huella LWPOLYLINE + muros y techo 3DFACE, sólido), VIALIDAD (3D) y atribución OSM', () => {
@@ -130,9 +168,9 @@ describe('escena → DXF 2000', () => {
     })
     const { ents } = parse(s)
     // AREA: esquinas locales (0,0)-(100,0)-(100,60)-(0,60), no UTM
-    const areaLw = onLayer(ents, 'LWPOLYLINE', 'AREA')[0]
-    expect(all(areaLw, 10)).toEqual(['0.000', '100.000', '100.000', '0.000'])
-    expect(all(areaLw, 20)).toEqual(['0.000', '0.000', '60.000', '60.000'])
+    const av = polyVerts(ents, 'AREA')
+    expect(av.map((p) => p.x.toFixed(3))).toEqual(['0.000', '100.000', '100.000', '0.000'])
+    expect(av.map((p) => p.y.toFixed(3))).toEqual(['0.000', '0.000', '60.000', '60.000'])
     // la cota de las curvas es la real (100), no se desplaza
     expect(first(onLayer(ents, 'LWPOLYLINE', 'CURVAS_MAESTRAS')[0], 38)).toBe('100.000')
     // TEXT de referencia con el origen en UTM absolutas
@@ -143,8 +181,7 @@ describe('escena → DXF 2000', () => {
 
   it('origen UTM (por defecto): las coordenadas son absolutas y no hay TEXT de origen', () => {
     const s = sceneToDxf({ frame, indexInterval: 5, area: { minX: 0, minY: 0, maxX: 100, maxY: 60 }, contours: [] })
-    const areaLw = onLayer(parse(s).ents, 'LWPOLYLINE', 'AREA')[0]
-    expect(all(areaLw, 10)[0]).toBe(E(0))
+    expect(polyVerts(parse(s).ents, 'AREA')[0].x.toFixed(3)).toBe(E(0))
     expect(s).not.toContain('Origen local')
   })
 

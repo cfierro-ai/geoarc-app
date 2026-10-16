@@ -59,6 +59,30 @@ export function longitudPolilinea(pts: XY[]): number {
   return d
 }
 
+/**
+ * Densifica una polilínea/anillo agregando puntos intermedios para que ningún tramo supere `paso` (m). Conserva los
+ * vértices originales. Un anillo cerrado se densifica también en el tramo de cierre y se devuelve SIN repetir el primer
+ * vértice. Sirve para apoyar el contorno del área sobre el terreno (una cota por punto, muestreada cada celda).
+ */
+export function densificarAnillo(pts: XY[], cerrada: boolean, paso: number): XY[] {
+  if (pts.length < 2 || !(paso > 0)) return pts
+  const out: XY[] = []
+  const n = cerrada ? pts.length : pts.length - 1
+  for (let k = 0; k < n; k++) {
+    const a = pts[k]
+    const b = pts[(k + 1) % pts.length]
+    out.push(a)
+    const d = Math.hypot(b.x - a.x, b.y - a.y)
+    const m = Math.floor(d / paso)
+    for (let i = 1; i <= m; i++) {
+      const t = (i * paso) / d
+      if (t < 1 - 1e-9) out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
+    }
+  }
+  if (!cerrada) out.push(pts[pts.length - 1])
+  return out
+}
+
 /** Quita vértices repetidos de un anillo dibujado en el mapa (el doble clic agrega dos clics en el mismo punto). */
 export function cleanRing(pts: XY[], tol = 0.3): XY[] {
   const out: XY[] = []

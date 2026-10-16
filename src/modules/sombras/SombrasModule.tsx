@@ -163,6 +163,7 @@ export function SombrasModule() {
       cotaBase: grid ? (p) => sampleClamped(grid, p.x, p.y) : undefined,
       origin: exportOrigin,
       demInfo: grid ? `${grid.meta.source} · ~${fmtNum(grid.meta.nominalResolutionM)} m` : undefined,
+      demCell: grid?.cell,
     })
     const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
     download(`geoarc_sombras_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.dxf`, dxf, 'application/dxf')

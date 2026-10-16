@@ -1,7 +1,7 @@
 import type { LocalFrame, XY } from '../geo/local'
 import type { HeightGrid } from '../dem/grid'
-import { pointInRect, type Rect } from '../dem/area'
-import { pointInPolygon } from '../envelope/polygon'
+import { pointInRect, rectCorners, type Rect } from '../dem/area'
+import { densificarAnillo, pointInPolygon } from '../envelope/polygon'
 import { edificioSolido } from './solido'
 import type { Edificacion } from '../contexto/contexto'
 
@@ -36,6 +36,11 @@ export class ObjWriter {
     this.faces.push(`f ${a} ${b} ${c}`)
   }
 
+  /** Polilínea (contorno del área): elemento `l` con los índices de vértice en orden. */
+  line(idx: number[]): void {
+    if (idx.length > 1) this.faces.push(`l ${idx.join(' ')}`)
+  }
+
   toString(): string {
     return ['# GEO·ARC · malla 3D · metros', ...this.verts, ...this.faces, ''].join('\n')
   }
@@ -60,6 +65,10 @@ export function sceneToObj(s: SceneForObj): string {
   const shift: XY = local ? { x: s.area.minX, y: s.area.minY } : { x: 0, y: 0 }
   const U = (p: XY): XY => (local ? { x: p.x - shift.x, y: p.y - shift.y } : s.frame.toUTM(p))
   const dentro = (p: XY) => (s.areaPolygon ? pointInPolygon(p, s.areaPolygon) : pointInRect(p, s.area))
+  const base = (p: XY) => {
+    const z = s.cotaBase ? s.cotaBase(p) : 0
+    return Number.isFinite(z) ? z : 0
+  }
 
   // terreno: dos triángulos por celda; se conserva el triángulo solo si sus tres vértices están dentro del área
   w.group('terreno')
@@ -86,10 +95,6 @@ export function sceneToObj(s: SceneForObj): string {
   // edificios: sólidos cerrados (piso + muros + techo) desde la cota más baja del terreno bajo la huella
   if (s.edificaciones?.length) {
     w.group('edificaciones')
-    const base = (p: XY) => {
-      const z = s.cotaBase ? s.cotaBase(p) : 0
-      return Number.isFinite(z) ? z : 0
-    }
     for (const e of s.edificaciones) {
       const z0 = Math.min(...e.anillo.map(base))
       const anilloU = e.anillo.map(U)
@@ -99,6 +104,18 @@ export function sceneToObj(s: SceneForObj): string {
       }
     }
   }
+
+  // contorno del área apoyado sobre el terreno (polilínea `l`), igual que el AREA del DXF: marca el límite del lote
+  w.group('area')
+  const anillo = s.areaPolygon ?? rectCorners(s.area)
+  const paso = s.grid.cell > 0 ? s.grid.cell : Math.max(1, Math.max(s.area.maxX - s.area.minX, s.area.maxY - s.area.minY) / 200)
+  const denso = s.cotaBase ? densificarAnillo(anillo, true, paso) : anillo
+  const idxArea = denso.map((q) => {
+    const u = U(q)
+    return w.vertex(u.x, u.y, base(q))
+  })
+  w.line([...idxArea, idxArea[0]])
+
   return w.toString()
 }
 

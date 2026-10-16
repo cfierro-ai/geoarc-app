@@ -8,18 +8,20 @@ const frame = createLocalFrame({ lon: -72.598, lat: -38.739 })
 const grillaPlana = (z = 0): HeightGrid =>
   createGrid(11, 11, 1, 0, 0, { source: 'plano', kind: 'plano', nominalResolutionM: 1 }, () => z)
 
-/** Parsea un OBJ: vértices, caras (índices) y grupos. */
+/** Parsea un OBJ: vértices, caras (índices), líneas `l` y grupos. */
 function parseObj(s: string) {
   const verts: [number, number, number][] = []
   const caras: { grupo: string; idx: [number, number, number] }[] = []
+  const lineas: { grupo: string; idx: number[] }[] = []
   let grupo = ''
   for (const l of s.split('\n')) {
     const p = l.trim().split(/\s+/)
     if (p[0] === 'v') verts.push([+p[1], +p[2], +p[3]])
     else if (p[0] === 'g') grupo = p[1]
     else if (p[0] === 'f') caras.push({ grupo, idx: [+p[1], +p[2], +p[3]] })
+    else if (p[0] === 'l') lineas.push({ grupo, idx: p.slice(1).map(Number) })
   }
-  return { verts, caras }
+  return { verts, caras, lineas }
 }
 const areaTriObj = (verts: [number, number, number][], caras: { idx: [number, number, number] }[]) =>
   caras.reduce((s, { idx }) => {
@@ -57,7 +59,11 @@ describe('malla OBJ', () => {
       ],
       cotaBase: () => 100,
     })
-    const { caras } = parseObj(s)
+    const { verts, caras, lineas } = parseObj(s)
+    // contorno del área como polilínea `l`, apoyado sobre el terreno (cota 100, nunca bajo él)
+    const area = lineas.filter((l) => l.grupo === 'area')
+    expect(area.length).toBeGreaterThan(0)
+    expect(area.flatMap((l) => l.idx).every((i) => verts[i - 1][2] === 100)).toBe(true)
     const edif = caras.filter((c) => c.grupo === 'edificaciones')
     expect(edif.length).toBeGreaterThan(0)
     const cuenta = new Map<string, number>()

@@ -4,7 +4,7 @@ import type { EnvelopeResult } from '../envelope/envelope'
 import { rectCorners, rectSize, type Rect } from '../dem/area'
 import { cotaLabel } from '../contours/escala'
 import { labelHeight, labelPlacements } from '../contours/labels'
-import { bbox } from '../envelope/polygon'
+import { bbox, densificarAnillo, pointInPolygon } from '../envelope/polygon'
 import { Dxf2000Writer } from './dxf2000'
 import { murosEdificio, techoEdificio } from './solido'
 import { elementosReferencia, longitudEscala } from './referencia'
@@ -32,6 +32,8 @@ export interface SceneForDxf {
   demInfo?: string
   /** Fecha para el recuadro de REFERENCIA (por defecto, la de hoy en es-CL). */
   fecha?: string
+  /** Lado de la celda del DEM (m): paso con que se muestrea el contorno del área sobre el terreno. */
+  demCell?: number
 }
 
 /** «Origen local = UTM 18S E 708617 N 5709343» para el TEXT de referencia en modo local. */
@@ -54,6 +56,11 @@ export function sceneToDxf(s: SceneForDxf): string {
   const local = s.origin === 'local'
   const shift: XY = local ? (s.area ? { x: s.area.minX, y: s.area.minY } : { x: 0, y: 0 }) : { x: 0, y: 0 }
   const U = (p: XY): XY => (local ? { x: p.x - shift.x, y: p.y - shift.y } : s.frame.toUTM(p))
+  // cota real del terreno en coordenadas locales (0 si no hay terreno); la Z nunca se desplaza
+  const base = (p: XY): number => {
+    const z = s.cotaBase ? s.cotaBase(p) : 0
+    return Number.isFinite(z) ? z : 0
+  }
 
   const span = s.area
     ? Math.max(rectSize(s.area).w, rectSize(s.area).h)
@@ -64,6 +71,11 @@ export function sceneToDxf(s: SceneForDxf): string {
         return Math.max(b.maxX - b.minX, b.maxY - b.minY)
       })()
   const th = span > 0 ? labelHeight(span) : 1
+  // paso para muestrear el contorno del área sobre el terreno: la celda del DEM, o ~span/200 si no se conoce
+  const paso = s.demCell && s.demCell > 0 ? s.demCell : Math.max(1, span / 200)
+  // cota a la que se apoyan las anotaciones de plano (REFERENCIA y ATRIBUCION): la mínima del terreno en el área,
+  // redondeada hacia abajo (no z=0, que quedaría decenas de metros bajo el terreno). Sin terreno, z = 0.
+  const zRef = s.cotaBase && s.area ? Math.floor(minBaseArea(s.area, s.areaPolygon ?? null, base, paso)) : 0
 
   for (const c of s.contours) {
     const isIndex = isIndexLevel(c.level, s.indexInterval)
@@ -71,14 +83,15 @@ export function sceneToDxf(s: SceneForDxf): string {
     if (isIndex) for (const l of labelPlacements(c, th)) w.text('ETIQUETAS', { ...U(l), z: c.level }, th, cotaLabel(c.level), l.angleDeg)
   }
 
-  if (s.area) w.lwpolyline('AREA', (s.areaPolygon ?? rectCorners(s.area)).map(U), true, 0)
+  // AREA como POLILÍNEA 3D apoyada sobre el terreno (una cota por vértice, muestreada cada celda); plana (z=0) sin terreno
+  if (s.area) {
+    const ring = s.areaPolygon ?? rectCorners(s.area)
+    const denso = s.cotaBase ? densificarAnillo(ring, true, paso) : ring
+    w.polyline3d('AREA', denso.map((q): XYZ => ({ ...U(q), z: base(q) })), true)
+  }
 
   const ctx = s.contexto
   if (ctx && (ctx.edificaciones.length || ctx.vias.length)) {
-    const base = (p: XY) => {
-      const z = s.cotaBase ? s.cotaBase(p) : 0
-      return Number.isFinite(z) ? z : 0
-    }
     const conocidas = ctx.edificaciones.filter((e) => esAlturaConocida(e.alturaFuente))
     const supuestas = ctx.edificaciones.filter((e) => !esAlturaConocida(e.alturaFuente))
     if (conocidas.length) w.addLayer('EDIFICACIONES', 9)
@@ -88,7 +101,7 @@ export function sceneToDxf(s: SceneForDxf): string {
     for (const e of supuestas) edificacionDxf(w, 'EDIFICACIONES_SUPUESTAS', e, base, U)
     for (const v of ctx.vias) w.polyline3d('VIALIDAD', v.linea.map((p): XYZ => ({ ...U(p), z: base(p) })), false)
     const b = s.area ?? bbox([...ctx.edificaciones.flatMap((e) => e.anillo), ...ctx.vias.flatMap((v) => v.linea)])
-    w.text('ATRIBUCION', { ...U({ x: (b.minX + b.maxX) / 2, y: b.minY - 2 * th }), z: 0 }, th, ATRIBUCION_OSM)
+    w.text('ATRIBUCION', { ...U({ x: (b.minX + b.maxX) / 2, y: b.minY - 2 * th }), z: zRef }, th, ATRIBUCION_OSM)
   }
 
   if (s.lot && s.lot.length > 2) {
@@ -128,10 +141,25 @@ export function sceneToDxf(s: SceneForDxf): string {
     `Fecha: ${s.fecha ?? new Date().toLocaleDateString('es-CL')}`,
   ]
   const ref = elementosReferencia(bb.minX, bb.minY - 6 * refTh, refTh, longitudEscala(refSpan), lineas)
-  for (const seg of ref.segmentos) w.lwpolyline('REFERENCIA', seg.map(U), false)
-  for (const t of ref.textos) w.text('REFERENCIA', { ...U(t.p), z: 0 }, t.altura, t.texto)
+  for (const seg of ref.segmentos) w.lwpolyline('REFERENCIA', seg.map(U), false, zRef)
+  for (const t of ref.textos) w.text('REFERENCIA', { ...U(t.p), z: zRef }, t.altura, t.texto)
 
   return w.toString()
+}
+
+/** Cota mínima del terreno dentro del área (muestreada en una grilla acotada), para apoyar la REFERENCIA. */
+function minBaseArea(area: Rect, poly: XY[] | null, base: (p: XY) => number, paso: number): number {
+  const step = Math.max(paso, Math.max(area.maxX - area.minX, area.maxY - area.minY) / 100)
+  let m = Infinity
+  for (let y = area.minY; y <= area.maxY + 1e-9; y += step)
+    for (let x = area.minX; x <= area.maxX + 1e-9; x += step) {
+      const p = { x, y }
+      if (!poly || pointInPolygon(p, poly)) {
+        const z = base(p)
+        if (z < m) m = z
+      }
+    }
+  return Number.isFinite(m) ? m : 0
 }
 
 /** Edificio en el DXF: huella (y patios) a su cota base como LWPOLYLINE, muros y techo como 3DFACE (sólido). */
