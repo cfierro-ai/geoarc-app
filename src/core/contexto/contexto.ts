@@ -45,6 +45,16 @@ export interface Contexto {
   vias: Via[]
 }
 
+/** ¿La altura viene de un dato de OSM (height o building:levels)? Si no, es supuesta (3 m por defecto, o tesela). */
+export const esAlturaConocida = (f: AlturaFuente) => f === 'height' || f === 'pisos'
+
+/** Conteo de alturas para el panel: total, con altura conocida y supuestas (y si todas las supuestas son el 3 m por defecto). */
+export function conteoAlturas(edificaciones: Edificacion[]): { total: number; conocida: number; supuesta: number; supuesta3m: boolean } {
+  const conocida = edificaciones.filter((e) => esAlturaConocida(e.alturaFuente)).length
+  const supuestas = edificaciones.filter((e) => !esAlturaConocida(e.alturaFuente))
+  return { total: edificaciones.length, conocida, supuesta: supuestas.length, supuesta3m: supuestas.length > 0 && supuestas.every((e) => e.alturaFuente === 'defecto') }
+}
+
 export function rectContexto(area: Rect, margen = MARGEN_CONTEXTO): Rect {
   return { minX: area.minX - margen, minY: area.minY - margen, maxX: area.maxX + margen, maxY: area.maxY + margen }
 }

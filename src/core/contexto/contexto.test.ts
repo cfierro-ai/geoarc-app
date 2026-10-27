@@ -4,6 +4,7 @@ import { area as polyArea, bbox } from '../envelope/polygon'
 import {
   ALTURA_PISO,
   alturaEdificacion,
+  conteoAlturas,
   consultaOverpass,
   contextoDesdeOverpass,
   MARGEN_CONTEXTO,
@@ -35,6 +36,16 @@ describe('altura de una edificación (OSM)', () => {
     expect(alturaEdificacion({ height: 'alto', 'building:levels': '2;3' })).toEqual({ altura: 6, fuente: 'pisos' })
     expect(alturaEdificacion({ building: 'yes' })).toEqual({ altura: 3, fuente: 'defecto' })
     expect(alturaEdificacion({ 'building:levels': '0' })).toEqual({ altura: 3, fuente: 'defecto' })
+  })
+})
+
+describe('conteo de alturas (conocidas vs supuestas)', () => {
+  const ed = (alturaFuente: 'height' | 'pisos' | 'defecto' | 'tesela') => ({ id: 'x', anillo: [], huecos: [], altura: 3, alturaFuente })
+  it('con altura conocida = height o pisos; el resto, supuesta (3 m si todas son por defecto)', () => {
+    expect(conteoAlturas([ed('height'), ed('pisos'), ed('defecto')])).toEqual({ total: 3, conocida: 2, supuesta: 1, supuesta3m: true })
+    expect(conteoAlturas([ed('tesela'), ed('tesela')])).toEqual({ total: 2, conocida: 0, supuesta: 2, supuesta3m: false })
+    expect(conteoAlturas([ed('height')])).toEqual({ total: 1, conocida: 1, supuesta: 0, supuesta3m: false })
+    expect(conteoAlturas([ed('defecto'), ed('tesela')])).toEqual({ total: 2, conocida: 0, supuesta: 2, supuesta3m: false })
   })
 })
 

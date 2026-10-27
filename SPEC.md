@@ -27,8 +27,8 @@ restricción manda en cada punto y desde dónde nace cada rasante.
   grilla) y el **contexto** (edificaciones y vías). Lo que se descarga en un módulo sirve al otro. Cada módulo guarda
   además su propio estado, que se conserva al cambiar de ruta.
 - **Cada módulo funciona solo**: ninguno necesita que el otro se haya usado antes.
-- `.geoarc` (v4) guarda las dos partes: sitio, área (rectángulo o polígono), fuente, equidistancia y el contexto
-  descargado (al abrir la escena no se vuelve a pedir); terreno del estudio, lote y norma. Abre v1, v2 y v3.
+- `.geoarc` (v4) guarda las dos partes: sitio, área (rectángulo o polígono), fuente, equidistancia, el contexto
+  descargado (al abrir la escena no se vuelve a pedir) y el origen de exportación; terreno del estudio, lote y norma. Abre v1, v2 y v3.
 - GitHub Pages no reescribe rutas: el build copia `index.html` en `curvas/`, `sombras/` y `404.html`.
 
 ## Módulo 1 · Curvas de nivel
@@ -44,8 +44,8 @@ carga un DEM (salvo la ladera sintética, sin internet).
 | · Malla del dato | Capa opcional sobre el mapa con celdas del tamaño real del dato. | Hecho |
 | · Fuente | En «Opciones avanzadas» (plegado): Terrarium (automático), ladera sintética (sin conexión), Copernicus GLO-30 visible y deshabilitado («requiere proxy»). | Hecho |
 | 3. Contexto | Edificaciones y vías de OpenStreetMap del área + 50 m, sin botón. Fuente principal: Overpass API (un edificio por entidad; altura = `height`, o `building:levels` × 3 m, o 3 m sin dato). Respaldo: teselas vectoriales de OpenFreeMap. Capas «Edificaciones» y «Vías» activables en el mapa. Sobre 3 km por lado no se descarga. | Hecho |
-| 4. Descargar | **DXF (UTM)**: CURVAS, CURVAS_MAESTRAS, ETIQUETAS (TEXT con la cota sobre las maestras), AREA (rectángulo o polígono), EDIFICACIONES (huella a la cota del terreno, altura como espesor), VIALIDAD (ejes 3D sobre el terreno) y ATRIBUCION («© OpenStreetMap contributors (ODbL)»), en UTM absolutas. | Hecho |
-| · Maqueta y malla 3D | Descargas «Maqueta» (corte láser) y «Malla 3D» (OBJ) para la maqueta de terreno de Taller III. | PR #5 (`v0.2-maqueta`) |
+| 4. Descargar | Dos tarjetas (**Plano DXF 2000** y **Malla 3D OBJ**), cada una con formato, unidades (metros), origen y el contenido real del archivo. **Origen** elegible: Local (esquina SO del área en 0,0; por defecto) o UTM absolutas. **DXF 2000 (AC1015)**: CURVAS, CURVAS_MAESTRAS, ETIQUETAS (un rótulo cada ~150 m, solo en maestras), AREA (POLYLINE 3D apoyada sobre el terreno, muestreada cada celda), EDIFICACIONES y EDIFICACIONES_SUPUESTAS (muros y techo en 3DFACE, sólidos, con las aristas interiores del techo invisibles; huella LWPOLYLINE), VIALIDAD (POLYLINE 3D), ATRIBUCION y REFERENCIA (barra de escala, norte, recuadro de metadatos; apoyadas a la cota mínima del terreno). **OBJ**: terreno recortado al área + edificios como sólidos cerrados + contorno del área sobre el terreno, en metros. | Hecho |
+| · Medir | Herramienta en el mapa: clics → distancia acumulada; doble clic → área en m² y ha; Esc cancela. | Hecho |
 
 ## Módulo 2 · Estudio de sombras
 
@@ -57,7 +57,7 @@ Envolvente por rasantes, distanciamientos y altura máxima.
 | 2. Terreno | **Plano (cota 0)** por defecto, sin red · **Terreno del sitio**: reutiliza el terreno compartido si cubre el lote; si no, lo descarga solo alrededor del lote. | Hecho |
 | 3. Lote | Dibujo en planta sobre el mapa (clic/doble clic), lote de ejemplo, o **por dimensiones** (ancho = frente, fondo, giro antihorario), centrado en el sitio. | Hecho |
 | 4. Norma | Perfil OGUC Chile / Personalizado. Altura máxima. Por lado: rol (deslinde, frente, sin rasante), ángulo, arranque, distanciamiento, eje de calle. | Hecho (valores OGUC por verificar) |
-| 5. Resultados | Superficie, huella, volumen, altura máx. alcanzable (refinada bajo la celda de cálculo, al milímetro); reparto de qué restricción gobierna; 3D con planos de rasante y las edificaciones del contexto extruidas (activables); DXF (UTM, con el contexto) y PNG. | Hecho |
+| 5. Resultados | Superficie, huella, volumen, altura máx. alcanzable (refinada bajo la celda de cálculo, al milímetro); reparto de qué restricción gobierna; 3D con planos de rasante y las edificaciones del contexto extruidas (activables, en tono más claro las de altura supuesta); descargas DXF 2000 y OBJ (paso Descargar) y PNG. | Hecho |
 
 Caso dorado: en plano, un lote por dimensiones 20 × 20 con rasante de 70° en los cuatro lados da el mismo techo que el
 test del núcleo «lote plano 20×20, rasante 70°»: centro = 10·tan 70° = **27,47 m** en el panel (±0,01).
@@ -82,10 +82,9 @@ test del núcleo «lote plano 20×20, rasante 70°»: centro = 10·tan 70° = **
 ## Backlog priorizado
 
 **Alta**
-1. Descargas para la maqueta de terreno de Taller III: «Maqueta» (corte láser) y «Malla 3D» (OBJ). *(PR #5, `v0.2-maqueta`.)*
-2. Perfil OGUC verificado por Chris: tabla de ángulos por región, arranque, distanciamientos, regla sobre 10,5 m (si aplica). Tests que lo fijen.
-3. Asignación de región por point-in-polygon (límites regionales oficiales) en vez de manual.
-4. Proxy liviano para Copernicus (p. ej. Cloudflare Worker que reenvíe `Range` y agregue CORS), documentado antes en
+1. Perfil OGUC verificado por Chris: tabla de ángulos por región, arranque, distanciamientos, regla sobre 10,5 m (si aplica). Tests que lo fijen.
+2. Asignación de región por point-in-polygon (límites regionales oficiales) en vez de manual.
+3. Proxy liviano para Copernicus (p. ej. Cloudflare Worker que reenvíe `Range` y agregue CORS), documentado antes en
    `docs/decisiones.md`. El CORS ya está verificado: Copernicus no tiene CORS (hoy aparece deshabilitado en el selector).
 
 **Media**

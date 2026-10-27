@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createLocalFrame, type LonLat, type XY } from '../../core/geo/local'
 import { gridStats, sampleClamped } from '../../core/dem/grid'
 import { areaProblem, autoCell, dataGridLines, gridCells, polygonProblem, rectFromCorners, rectSize } from '../../core/dem/area'
@@ -8,6 +8,7 @@ import { contourLevels, isolines } from '../../core/contours/isolines'
 import {
   contarNiveles,
   curvasPorDesnivel,
+  CURVAS_MIN,
   equidistanciaMinimaConfiable,
   MAX_NIVELES,
   PRESELECCION,
@@ -15,20 +16,30 @@ import {
   usoDelDato,
 } from '../../core/contours/escala'
 import { sceneToDxf } from '../../core/export/sceneDxf'
+import { sceneToObj } from '../../core/export/obj'
 import { MapView } from '../../app/components/MapView'
 import { Scene3D } from '../../app/components/Scene3D'
 import { SiteSection } from '../../app/components/SiteSection'
 import { SourceOptions, TerrainMeta, TerrainStatus } from '../../app/components/TerrainInfo'
 import { ContextoPanel } from '../../app/components/ContextoInfo'
+import { DescargaTarjetas } from '../../app/components/DescargaTarjetas'
 import { btn, btnPrimary, input, ModulePanel, Note, Section } from '../../app/components/ui'
 import { download, useEscape } from '../../app/util'
-import { fmt, fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, type MapMode } from '../../app/model'
+import { useMeasure } from '../../app/useMeasure'
+import { fmt, fmtAreaSize, fmtNum, INDEX_EVERY_OPTIONS, origenSufijo, type MapMode } from '../../app/model'
 import { actions, useAppState } from '../../app/store'
 
-/** Qué lleva el DXF, en una frase: «Curvas con cota, área, edificaciones (con su altura) y vías». */
-function contenidoDxf(edificaciones: boolean, vias: boolean): string {
-  const partes = ['Curvas con cota', 'área', ...(edificaciones ? ['edificaciones (con su altura)'] : []), ...(vias ? ['vías'] : [])]
-  return `${partes.slice(0, -1).join(', ')} y ${partes[partes.length - 1]}`
+/** Contenido REAL del archivo según el formato (solo lo que va de verdad): para las tarjetas de descarga. */
+function contenidoArchivo(fmt: 'dxf' | 'obj', poligono: boolean, nEdif: number, nVias: number): string[] {
+  if (fmt === 'obj')
+    return ['Terreno recortado al área', ...(nEdif ? [`${nEdif} ${nEdif === 1 ? 'edificio' : 'edificios'} (sólidos cerrados)`] : [])]
+  return [
+    'Curvas de nivel con cota',
+    poligono ? 'Área (polígono)' : 'Área (rectángulo)',
+    ...(nEdif ? [`${nEdif} ${nEdif === 1 ? 'edificación' : 'edificaciones'} (con su altura)`] : []),
+    ...(nVias ? [`${nVias} ${nVias === 1 ? 'vía' : 'vías'}`] : []),
+    'Referencia: escala, norte y metadatos',
+  ]
 }
 
 /**
@@ -44,12 +55,14 @@ export function CurvasModule() {
   const curvas = useAppState((s) => s.curvas)
   const contexto = useAppState((s) => s.contexto)
   const capas = useAppState((s) => s.capas)
+  const exportOrigin = useAppState((s) => s.exportOrigin)
   const ctxDatos = contexto.estado === 'listo' ? contexto.datos : null
   const [mode, setMode] = useState<MapMode>('none')
   const [areaCorner, setAreaCorner] = useState<XY | null>(null)
   /** Vértices del polígono en dibujo y, si al cerrarlo no sirve, por qué. */
   const [polyDraft, setPolyDraft] = useState<XY[]>([])
   const [polyProblem, setPolyProblem] = useState<string | null>(null)
+  const measure = useMeasure()
   const frame = useMemo(() => createLocalFrame(site), [site])
   const { area, polygon, dem } = terrain
   const { contourInterval, indexEvery, showDataGrid } = curvas
@@ -70,12 +83,13 @@ export function CurvasModule() {
     return lines.flatMap((l) => clipPolyline([l.a, l.b], false, polygon).map((t) => ({ a: t[0], b: t[t.length - 1] })))
   }, [showDataGrid, dem, area, polygon])
 
-  const cancel = useCallback(() => {
+  const cancel = () => {
     setMode('none')
     setAreaCorner(null)
     setPolyDraft([])
     setPolyProblem(null)
-  }, [])
+    measure.reset()
+  }
 
   const finishPolygon = () => {
     const ring = cleanRing(polyDraft)
@@ -89,11 +103,12 @@ export function CurvasModule() {
     void actions.setAreaPolygon(ring)
   }
 
-  const startDrawing = (m: 'area' | 'poligono') => {
+  const startDrawing = (m: 'area' | 'poligono' | 'medir') => {
     cancel()
     setMode(m)
     actions.setCurvas({ view: 'mapa' })
   }
+  const finishDraft = () => (mode === 'medir' ? measure.close() : finishPolygon())
   useEscape(mode, cancel)
 
   const onPick = (p: LonLat) => {
@@ -110,6 +125,8 @@ export function CurvasModule() {
     } else if (mode === 'poligono') {
       setPolyProblem(null)
       setPolyDraft((d) => [...d, frame.toLocal(p)])
+    } else if (mode === 'medir') {
+      measure.add(frame.toLocal(p))
     }
   }
 
@@ -122,8 +139,27 @@ export function CurvasModule() {
       areaPolygon: polygon,
       contexto: ctxDatos,
       cotaBase: dem ? (p) => sampleClamped(dem, p.x, p.y) : undefined,
+      origin: exportOrigin,
+      demInfo: dem ? `${dem.meta.source} · ~${fmtNum(dem.meta.nominalResolutionM)} m` : undefined,
+      demCell: dem?.cell,
     })
-    download(`geoarc_curvas_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_UTM${frame.zone}${frame.south ? 'S' : 'N'}.dxf`, dxf, 'application/dxf')
+    const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
+    download(`geoarc_curvas_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.dxf`, dxf, 'application/dxf')
+  }
+
+  const exportObj = () => {
+    if (!dem || !area) return
+    const obj = sceneToObj({
+      frame,
+      grid: dem,
+      area,
+      areaPolygon: polygon,
+      origin: exportOrigin,
+      edificaciones: ctxDatos?.edificaciones,
+      cotaBase: (p) => sampleClamped(dem, p.x, p.y),
+    })
+    const utm = `UTM${frame.zone}${frame.south ? 'S' : 'N'}`
+    download(`geoarc_malla_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_${utm}${origenSufijo(exportOrigin)}.obj`, obj, 'text/plain')
   }
 
   const minConf = dem ? equidistanciaMinimaConfiable(dem.meta) : undefined
@@ -153,10 +189,23 @@ export function CurvasModule() {
               </div>
               {polyProblem && <Note tone="warn">{polyProblem}</Note>}
             </>
+          ) : mode === 'medir' ? (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <button className={btn} onClick={cancel}>Terminar</button>
+                <span className="text-xs text-slate-500">Clic: punto · doble clic: cerrar (área) · Esc: salir</span>
+              </div>
+              <p className="text-xs text-slate-700" data-testid="medida-info">
+                {measure.area !== null
+                  ? `Área: ${fmt(measure.area)} m² · ${fmt(measure.area / 10_000, 2)} ha`
+                  : `Distancia: ${fmt(measure.distancia)} m (${measure.pts.length} ${measure.pts.length === 1 ? 'punto' : 'puntos'})`}
+              </p>
+            </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               <button className={area ? btn : btnPrimary} onClick={() => startDrawing('area')}>Dibujar rectángulo</button>
               <button className={btn} onClick={() => startDrawing('poligono')}>Dibujar polígono</button>
+              <button className={btn} onClick={() => startDrawing('medir')}>Medir</button>
               {!area && <span className="text-xs text-slate-500">El terreno se descarga solo al cerrar el área.</span>}
             </div>
           )}
@@ -186,6 +235,11 @@ export function CurvasModule() {
                   desnivel: <b data-testid="equidistancia-sugerida">{fmtNum(pre.equidistancia)} m</b> ({pre.curvas} curvas en{' '}
                   {fmtNum(st.max - st.min, 1)} m).
                 </p>
+                {pre.curvas < CURVAS_MIN && (
+                  <p className="text-slate-800" data-testid="equidistancia-pocas">
+                    Poco desnivel para esta resolución: {pre.curvas} {pre.curvas === 1 ? 'curva' : 'curvas'}.
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-xs text-slate-600">
@@ -232,11 +286,29 @@ export function CurvasModule() {
 
         {dem && (
           <Section n={4} title="Descargar" done={false}>
-            <button className={btnPrimary} onClick={exportDxf}>Descargar DXF (UTM)</button>
-            <p className="text-xs text-slate-500" data-testid="descarga-contenido">
-              {contenidoDxf(!!ctxDatos?.edificaciones.length, !!ctxDatos?.vias.length)}. Coordenadas UTM {frame.zone}
-              {frame.south ? 'S' : 'N'} (EPSG:{frame.epsg}), en metros.
-            </p>
+            <DescargaTarjetas
+              tamano={area ? fmtAreaSize(rectSize(area).w, rectSize(area).h) : undefined}
+              tarjetas={[
+                {
+                  titulo: 'Plano (DXF 2000)',
+                  formato: 'DXF 2000 (AC1015)',
+                  boton: 'Descargar DXF 2000',
+                  destacado: true,
+                  onDescargar: exportDxf,
+                  testId: 'tarjeta-dxf',
+                  contenido: contenidoArchivo('dxf', !!polygon, ctxDatos?.edificaciones.length ?? 0, ctxDatos?.vias.length ?? 0),
+                },
+                {
+                  titulo: 'Malla 3D (OBJ)',
+                  formato: 'OBJ (malla de triángulos)',
+                  boton: 'Descargar malla 3D (OBJ)',
+                  onDescargar: exportObj,
+                  disabled: !dem,
+                  testId: 'tarjeta-obj',
+                  contenido: contenidoArchivo('obj', !!polygon, ctxDatos?.edificaciones.length ?? 0, ctxDatos?.vias.length ?? 0),
+                },
+              ]}
+            />
           </Section>
         )}
       </ModulePanel>
@@ -255,11 +327,13 @@ export function CurvasModule() {
             dataGrid={dataGrid}
             lot={[]}
             draft={polyDraft}
+            medida={measure.pts}
+            medidaCerrada={measure.cerrada}
             contexto={ctxDatos}
             capas={capas}
             mode={mode}
             onPick={onPick}
-            onFinishDraft={finishPolygon}
+            onFinishDraft={finishDraft}
             visible={view === 'mapa'}
           />
         </div>

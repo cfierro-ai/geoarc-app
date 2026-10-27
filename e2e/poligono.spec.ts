@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { centroMapa, dentroOBorde, interceptarContexto, interceptarTerrarium, polilineasDxf } from './util'
+import { centroMapa, dentroOBorde, interceptarContexto, interceptarMapaBase, interceptarTerrarium, lwpolilineasDxf, polilineasDxf } from './util'
 
 /**
  * Área como polígono (clics + doble clic). El terreno se calcula sobre el rectángulo envolvente y las curvas se recortan
@@ -11,6 +11,7 @@ test('curvas: área como polígono → curvas recortadas al polígono, también 
   page.on('pageerror', (e) => errors.push(e.message))
   const n = await interceptarTerrarium(page)
   await interceptarContexto(page)
+  await interceptarMapaBase(page)
   await page.goto('/curvas')
   const { cx, cy } = await centroMapa(page)
 
@@ -31,16 +32,17 @@ test('curvas: área como polígono → curvas recortadas al polígono, también 
   await expect(page.getByTestId('map')).toHaveAttribute('data-idle', 'true', { timeout: 30_000 })
   await page.screenshot({ path: 'e2e/capturas/14-area-poligono.png' })
 
-  // DXF: AREA es el triángulo, y ningún vértice de las curvas sale de él (tolerancia: los 3 decimales del DXF)
+  // DXF: AREA es el triángulo (POLYLINE 3D sobre el terreno, muestreada cada celda), y ningún vértice de las curvas
+  // sale de él (tolerancia: los 3 decimales del DXF)
   const [descarga] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Descargar DXF (UTM)' }).click(),
+    page.getByRole('button', { name: 'Descargar DXF 2000' }).click(),
   ])
   await descarga.saveAs('e2e/capturas/15-area-poligono.dxf')
   const dxf = await readFile(await descarga.path(), 'utf8')
   const [tri] = polilineasDxf(dxf, 'AREA')
-  expect(tri).toHaveLength(3)
-  const curvas = [...polilineasDxf(dxf, 'CURVAS'), ...polilineasDxf(dxf, 'CURVAS_MAESTRAS')]
+  expect(tri.length).toBeGreaterThanOrEqual(3) // los 3 vértices del triángulo más los puntos de muestreo del terreno
+  const curvas = [...lwpolilineasDxf(dxf, 'CURVAS'), ...lwpolilineasDxf(dxf, 'CURVAS_MAESTRAS')]
   expect(curvas.length).toBeGreaterThan(3)
   const fuera = curvas.flat().filter((p) => !dentroOBorde(p, tri, 0.01))
   expect(fuera).toEqual([])
@@ -55,6 +57,7 @@ test('curvas: área como polígono → curvas recortadas al polígono, también 
 test('curvas: un polígono de 2 vértices no se cierra y el panel dice por qué', async ({ page }) => {
   await interceptarTerrarium(page)
   await interceptarContexto(page)
+  await interceptarMapaBase(page)
   await page.goto('/curvas')
   const { cx, cy } = await centroMapa(page)
   await page.getByRole('button', { name: 'Dibujar polígono' }).click()

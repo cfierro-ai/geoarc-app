@@ -1,6 +1,35 @@
 import { crc32, deflateSync } from 'node:zlib'
 import { expect, type Page } from '@playwright/test'
 
+/** PNG RGB de color sólido `size`×`size` (por defecto 1×1). */
+export function solidPng(r: number, g: number, b: number, size = 1): Buffer {
+  const rows: Buffer[] = []
+  for (let j = 0; j < size; j++) {
+    const row = Buffer.alloc(1 + size * 3)
+    for (let i = 0; i < size; i++) {
+      row[1 + i * 3] = r
+      row[2 + i * 3] = g
+      row[3 + i * 3] = b
+    }
+    rows.push(row)
+  }
+  return pngFromRows(rows, size, size)
+}
+
+/**
+ * Deja el mapa base determinista y sin red: aborta OpenFreeMap (fuerza el respaldo a OSM raster) y sirve teselas grises.
+ * Así el mapa llega a reposo («idle») de inmediato y los e2e no dependen de que carguen las teselas de OpenFreeMap.
+ * NO usar en los tests que prueban el mapa base en vivo (mapa-base, buscador).
+ */
+export async function interceptarMapaBase(page: Page) {
+  const gris = solidPng(226, 232, 240)
+  await page.route('https://tiles.openfreemap.org/**', (r) => r.abort('failed'))
+  for (const patron of ['https://tile.openstreetmap.org/**', 'https://server.arcgisonline.com/**'])
+    await page.route(patron, (r) =>
+      r.fulfill({ status: 200, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body: gris }),
+    )
+}
+
 /** Abre «Opciones avanzadas» y elige la ladera sintética (sin red). */
 export async function usarLaderaSintetica(page: Page) {
   await page.getByText('Opciones avanzadas').click()
@@ -9,7 +38,9 @@ export async function usarLaderaSintetica(page: Page) {
 
 /** Centro del mapa en pantalla (ahí está el sitio). */
 export async function centroMapa(page: Page) {
-  await expect(page.getByTestId('map')).toHaveAttribute('data-ready', 'true') // el mapa se crea tras cargar el estilo base
+  // data-ready se pone al cargar el estilo base de OpenFreeMap (externo), con respaldo a OSM raster a los 8 s:
+  // es una espera de red externa, así que el plazo es generoso (no el 5 s por defecto).
+  await expect(page.getByTestId('map')).toHaveAttribute('data-ready', 'true', { timeout: 20_000 })
   const box = (await page.getByTestId('map').boundingBox())!
   return { cx: box.x + box.width / 2, cy: box.y + box.height / 2 }
 }
@@ -82,6 +113,37 @@ export async function dibujarArea(page: Page, d = 100) {
 }
 
 /** Vértices de las POLYLINE de una capa de un DXF R12 (x, y en UTM), una lista por polilínea. */
+/** Capas de usuario de un DXF 2000, en orden (excluye la capa 0). */
+export function capasDxf(dxf: string): string[] {
+  return [...dxf.matchAll(/AcDbLayerTableRecord\n\s*2\n([^\n]+)\n/g)].map((m) => m[1]).filter((x) => x !== '0')
+}
+
+/** Vértices de cada LWPOLYLINE de una capa (DXF 2000): curvas, área y huellas de edificio. */
+export function lwpolilineasDxf(dxf: string, capa: string): { x: number; y: number }[][] {
+  const l = dxf.split(/\r?\n/)
+  const out: { x: number; y: number }[][] = []
+  let cur: { code: string; val: string }[] | null = null
+  const flush = () => {
+    if (!cur) return
+    if (cur.find((p) => p.code === '8')?.val === capa) {
+      const xs = cur.filter((p) => p.code === '10').map((p) => +p.val)
+      const ys = cur.filter((p) => p.code === '20').map((p) => +p.val)
+      out.push(xs.map((x, i) => ({ x, y: ys[i] })))
+    }
+    cur = null
+  }
+  for (let k = 0; k + 1 < l.length; k += 2) {
+    const code = l[k].trim()
+    const val = l[k + 1]
+    if (code === '0') {
+      flush()
+      cur = val === 'LWPOLYLINE' ? [] : null
+    } else if (cur) cur.push({ code, val })
+  }
+  flush()
+  return out
+}
+
 export function polilineasDxf(dxf: string, capa: string): { x: number; y: number }[][] {
   const l = dxf.split(/\r?\n/)
   const ents: { type: string; g: Map<string, string> }[] = []
@@ -133,6 +195,11 @@ export function terrariumPng(cota: (i: number, j: number) => number): Buffer {
     }
     rows.push(row)
   }
+  return pngFromRows(rows, W, W)
+}
+
+/** Ensambla un PNG RGB a partir de filas (cada una con su byte de filtro 0 + RGB). */
+function pngFromRows(rows: Buffer[], w: number, h: number): Buffer {
   const chunk = (type: string, data: Buffer) => {
     const len = Buffer.alloc(4)
     len.writeUInt32BE(data.length)
@@ -142,8 +209,8 @@ export function terrariumPng(cota: (i: number, j: number) => number): Buffer {
     return Buffer.concat([len, td, crc])
   }
   const ihdr = Buffer.alloc(13)
-  ihdr.writeUInt32BE(W, 0)
-  ihdr.writeUInt32BE(W, 4)
+  ihdr.writeUInt32BE(w, 0)
+  ihdr.writeUInt32BE(h, 4)
   ihdr[8] = 8 // bits por canal
   ihdr[9] = 2 // RGB
   return Buffer.concat([
