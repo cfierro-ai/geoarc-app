@@ -4,6 +4,9 @@ import type { EdgeRole, PerfilNormativo } from '../core/normativa/perfiles'
 import { reglaPorRol } from '../core/normativa/perfiles'
 import { lotFromDimensions } from '../core/envelope/lote'
 
+/** OpenFreeMap, estilo vectorial «Liberty»: mapa base y respaldo del contexto (sus teselas traen edificios y vías). */
+export const OFM_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
+
 export type DemSourceId = 'copernicus' | 'terrarium' | 'sintetico'
 
 export interface DemSourceInfo {
@@ -35,7 +38,8 @@ export interface EdgeSetting {
   rule: EdgeRule
 }
 
-export type MapMode = 'none' | 'site' | 'area' | 'lot'
+/** Qué hace un clic en el mapa: nada, fijar el sitio, área rectangular (dos esquinas), área poligonal o lote. */
+export type MapMode = 'none' | 'site' | 'area' | 'poligono' | 'lot'
 
 export const EDGE_COLORS = ['#e4572e', '#17bebb', '#f2b705', '#76b041', '#8e6bbf', '#2e86ab', '#f28482', '#a0522d']
 export const MAX_HEIGHT_COLOR = '#9aa3ad'
@@ -63,12 +67,11 @@ export function exampleLot(): XY[] {
 export type View = 'mapa' | '3d'
 
 /** Terreno del estudio de sombras. */
-export type TerrainMode = 'plano' | 'sitio' | 'levantamiento'
+export type TerrainMode = 'plano' | 'sitio'
 
-export const TERRAIN_MODES: { id: TerrainMode; label: string; hint: string; disabled?: string }[] = [
+export const TERRAIN_MODES: { id: TerrainMode; label: string; hint: string }[] = [
   { id: 'plano', label: 'Plano (cota 0)', hint: 'Sin topografía: la envolvente «de libro». No necesita conexión.' },
   { id: 'sitio', label: 'Terreno del sitio', hint: 'Terreno real alrededor del lote: se descarga solo (o se reutiliza el del módulo de curvas).' },
-  { id: 'levantamiento', label: 'Levantamiento importado', hint: 'DXF de un levantamiento topográfico.', disabled: 'próximamente' },
 ]
 
 /** Estado de la carga del terreno. */

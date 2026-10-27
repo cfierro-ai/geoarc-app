@@ -4,7 +4,7 @@ import type { DemMeta } from '../dem/grid'
  * Qué curvas sostiene el dato de elevación. Criterio docente fijado por Chris (2026-10-10); es cartográfico, no
  * normativo, y vive solo aquí.
  * - Equidistancia mínima confiable según la resolución REAL del dato (`DemMeta.nominalResolutionM`):
- *   ≥ 20 m (SRTM / Terrarium) → 5 m; 5–20 m → 2 m; < 5 m → 1 m; levantamiento topográfico → 0,5 m.
+ *   ≥ 20 m (SRTM / Terrarium) → 5 m; 5–20 m → 2 m; < 5 m → 1 m.
  * - Preselección: la menor de PRESELECCION que sea ≥ la mínima confiable y dé entre 5 y 20 curvas según el desnivel
  *   del área. Las equidistancias menores siguen disponibles, con la advertencia de precisión aparente.
  */
@@ -20,7 +20,6 @@ export const MAX_NIVELES = 400
 type MetaDato = Pick<DemMeta, 'kind' | 'nominalResolutionM'>
 
 export function equidistanciaMinimaConfiable(meta: MetaDato): number {
-  if (meta.kind === 'levantamiento') return 0.5
   const r = meta.nominalResolutionM
   return r >= 20 ? 5 : r >= 5 ? 2 : 1
 }
@@ -46,7 +45,6 @@ export function preseleccionEquidistancia(meta: MetaDato, desnivel: number): { e
 /** Para qué sirve el dato: etiqueta informativa (no es una escala de plano). */
 export function usoDelDato(meta: MetaDato): string {
   const r = meta.nominalResolutionM.toLocaleString('es-CL', { maximumFractionDigits: 2 })
-  if (meta.kind === 'levantamiento') return 'levantamiento topográfico: útil para el lote y el proyecto'
   if (meta.kind === 'sintético') return `terreno inventado (~${r} m): sirve para practicar, no describe un lugar real`
   if (meta.nominalResolutionM >= 20) return `dato de ~${r} m: útil para ladera y barrio, no para el lote`
   if (meta.nominalResolutionM >= 5) return `dato de ~${r} m: útil para barrio y manzana; para el lote, solo como referencia`

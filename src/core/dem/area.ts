@@ -1,5 +1,6 @@
 import type { XY } from '../geo/local'
 import { niceCeil, niceNearest } from '../nice'
+import { area, bbox } from '../envelope/polygon'
 
 /** Rectángulo alineado con la cuadrícula UTM del sitio, en coordenadas locales (m). */
 export interface Rect {
@@ -56,6 +57,19 @@ export function areaProblem(r: Rect): string | null {
   if (Math.min(w, h) < MIN_AREA_SIDE) return `El área debe medir al menos ${MIN_AREA_SIDE} m por lado.`
   if (Math.max(w, h) > MAX_AREA_SIDE) return `El área no puede superar ${MAX_AREA_SIDE / 1000} km por lado.`
   return null
+}
+
+/** Rectángulo envolvente de un polígono: el terreno y las curvas se calculan sobre él y luego se recortan. */
+export function rectOfPolygon(poly: XY[]): Rect {
+  const b = bbox(poly)
+  return { minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY }
+}
+
+/** Motivo por el que el polígono no sirve como área, o null si sirve. */
+export function polygonProblem(poly: XY[]): string | null {
+  if (poly.length < 3) return 'El polígono necesita al menos 3 vértices.'
+  if (area(poly) < 1) return 'El polígono no encierra superficie.'
+  return areaProblem(rectOfPolygon(poly))
 }
 
 /**

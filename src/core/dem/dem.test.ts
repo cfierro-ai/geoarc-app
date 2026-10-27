@@ -1,4 +1,4 @@
-import { createGrid, rectGrid, sampleBilinear, gridStats } from './grid'
+import { createGrid, rectGrid, sampleBilinear, sampleClamped, gridStats } from './grid'
 import { decodeTerrarium, lonLatToTile, terrariumPixelSize, terrariumZoom } from './terrarium'
 import { copernicusTileName } from './copernicus'
 import { rasterSampler } from './resample'
@@ -66,5 +66,15 @@ describe('fuentes DEM', () => {
     const s = rasterSampler(data, 3, 3, 0, 2, 1, 1)
     expect(s({ lon: 1.5, lat: 0.5 })).toBeCloseTo(6.5, 6)
     expect(Number.isNaN(s({ lon: 3, lat: 1 }))).toBe(true)
+  })
+})
+
+describe('cota fuera de la grilla', () => {
+  it('sampleClamped usa el borde más cercano (el contexto llega 50 m más allá del terreno)', () => {
+    const g = createGrid(3, 3, 10, 0, 0, { source: 't', kind: 'DTM', nominalResolutionM: 10 }, (x, y) => x + 2 * y)
+    expect(sampleClamped(g, 5, 5)).toBeCloseTo(15, 9)
+    expect(sampleClamped(g, -40, 5)).toBeCloseTo(10, 9) // x → 0
+    expect(sampleClamped(g, 70, 90)).toBeCloseTo(20 + 40, 9) // esquina NE
+    expect(Number.isNaN(sampleBilinear(g, -40, 5))).toBe(true)
   })
 })

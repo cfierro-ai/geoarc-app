@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import type { MapMode } from './model'
 
-/** Esc cancela el dibujo en curso (sitio, área o lote). */
+/** Esc cancela el dibujo en curso (sitio, área, polígono o lote). */
 export function useEscape(mode: MapMode, cancel: () => void) {
   useEffect(() => {
     if (mode === 'none') return

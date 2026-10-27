@@ -1,4 +1,4 @@
-import { areaProblem, autoCell, dataGridLines, gridCells, rectFromCorners, type Rect } from './area'
+import { areaProblem, autoCell, dataGridLines, gridCells, polygonProblem, rectFromCorners, rectOfPolygon, type Rect } from './area'
 import { niceCeil, niceNearest, SERIE_CARTO } from '../nice'
 
 const R = (w: number, h: number): Rect => ({ minX: 0, minY: 0, maxX: w, maxY: h })
@@ -24,6 +24,18 @@ describe('área de extracción', () => {
     expect(areaProblem(R(100, 100))).toBeNull()
     expect(areaProblem(R(5, 100))).toMatch(/al menos 10 m/)
     expect(areaProblem(R(30_000, 100))).toMatch(/20 km/)
+  })
+
+  it('polígono: el cálculo se hace sobre su rectángulo envolvente', () => {
+    const tri = [{ x: 10, y: -5 }, { x: 110, y: -5 }, { x: 10, y: 95 }]
+    expect(rectOfPolygon(tri)).toEqual({ minX: 10, minY: -5, maxX: 110, maxY: 95 })
+  })
+
+  it('polígono: al menos 3 vértices, con superficie, y su rectángulo envolvente con tamaño válido', () => {
+    expect(polygonProblem([{ x: 0, y: 0 }, { x: 50, y: 0 }])).toMatch(/al menos 3 vértices/)
+    expect(polygonProblem([{ x: 0, y: 0 }, { x: 50, y: 50 }, { x: 100, y: 100 }])).toMatch(/no encierra superficie/)
+    expect(polygonProblem([{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 0, y: 5 }])).toMatch(/al menos 10 m/)
+    expect(polygonProblem([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 100 }])).toBeNull()
   })
 
   it('celda automática: ~250 celdas en el lado menor', () => {

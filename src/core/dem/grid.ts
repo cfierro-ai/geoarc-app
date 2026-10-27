@@ -5,7 +5,7 @@ import { gridCells, rectCenter, type Rect } from './area'
  * Celda (i, j) tiene su centro en (x0 + i·cell, y0 + j·cell). j crece hacia el norte.
  * Valores faltantes = NaN.
  */
-export type DemKind = 'DSM' | 'DTM' | 'sintético' | 'levantamiento' | 'plano'
+export type DemKind = 'DSM' | 'DTM' | 'sintético' | 'plano'
 
 export interface DemMeta {
   /** Nombre legible de la fuente, p. ej. "Copernicus GLO-30". */
@@ -75,6 +75,16 @@ export function sampleBilinear(g: HeightGrid, x: number, y: number): number {
   const z01 = g.z[(j + 1) * g.nx + i]
   const z11 = g.z[(j + 1) * g.nx + i + 1]
   return (z00 * (1 - tx) + z10 * tx) * (1 - ty) + (z01 * (1 - tx) + z11 * tx) * ty
+}
+
+/**
+ * Como sampleBilinear, pero fuera de la grilla toma el punto más cercano del borde. Para dar cota a lo que queda un poco
+ * fuera del terreno descargado (el contexto llega 50 m más allá del área).
+ */
+export function sampleClamped(g: HeightGrid, x: number, y: number): number {
+  const cx = Math.min(Math.max(x, g.x0), g.x0 + (g.nx - 1) * g.cell)
+  const cy = Math.min(Math.max(y, g.y0), g.y0 + (g.ny - 1) * g.cell)
+  return sampleBilinear(g, cx, cy)
 }
 
 export function gridStats(g: HeightGrid): { min: number; max: number } {

@@ -12,16 +12,15 @@ import { labelHeight, labelPlacements } from './labels'
 
 const TERRARIUM = { kind: 'DSM' as const, nominalResolutionM: 30 }
 const dato = (r: number) => ({ kind: 'DSM' as const, nominalResolutionM: r })
-const LEV = { kind: 'levantamiento' as const, nominalResolutionM: 0.5 }
 
 describe('equidistancia mínima confiable según la resolución del dato', () => {
-  it('≥ 20 m → 5 m; 5–20 m → 2 m; < 5 m → 1 m; levantamiento → 0,5 m', () => {
+  it('≥ 20 m → 5 m; 5–20 m → 2 m; < 5 m → 1 m', () => {
     expect(equidistanciaMinimaConfiable(TERRARIUM)).toBe(5)
     expect(equidistanciaMinimaConfiable(dato(20))).toBe(5)
     expect(equidistanciaMinimaConfiable(dato(19.9))).toBe(2)
     expect(equidistanciaMinimaConfiable(dato(5))).toBe(2)
     expect(equidistanciaMinimaConfiable(dato(4.9))).toBe(1)
-    expect(equidistanciaMinimaConfiable(LEV)).toBe(0.5)
+    expect(equidistanciaMinimaConfiable(dato(0.4))).toBe(1)
   })
 })
 
@@ -39,8 +38,7 @@ describe('preselección: la menor ≥ mínima confiable que dé entre 5 y 20 cur
     expect(preseleccionEquidistancia(TERRARIUM, 300)).toEqual({ equidistancia: 20, curvas: 15 }) // 5 → 60, 10 → 30
     expect(preseleccionEquidistancia(dato(10), 14)).toEqual({ equidistancia: 2, curvas: 7 })
     expect(preseleccionEquidistancia(dato(1), 14.2)).toEqual({ equidistancia: 1, curvas: 14 })
-    expect(preseleccionEquidistancia(LEV, 4)).toEqual({ equidistancia: 0.5, curvas: 8 })
-    expect(preseleccionEquidistancia(LEV, 30)).toEqual({ equidistancia: 2, curvas: 15 }) // 0,5 → 60, 1 → 30
+    expect(preseleccionEquidistancia(dato(1), 30)).toEqual({ equidistancia: 2, curvas: 15 }) // 1 → 30
   })
 
   it('sin candidata en 5–20: casi plano → la mínima confiable; desnivel enorme → la mayor', () => {
@@ -59,7 +57,6 @@ describe('uso del dato (etiqueta informativa)', () => {
     expect(usoDelDato(TERRARIUM)).toBe('dato de ~30 m: útil para ladera y barrio, no para el lote')
     expect(usoDelDato(dato(10))).toMatch(/^dato de ~10 m: útil para barrio y manzana/)
     expect(usoDelDato(dato(2))).toBe('dato de ~2 m: útil para manzana y lote')
-    expect(usoDelDato(LEV)).toMatch(/^levantamiento topográfico/)
     expect(usoDelDato({ kind: 'sintético', nominalResolutionM: 0.4 })).toMatch(/^terreno inventado \(~0,4 m\)/)
   })
 })

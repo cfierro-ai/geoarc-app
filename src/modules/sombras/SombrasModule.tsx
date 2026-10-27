@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createLocalFrame, type LonLat, type XY } from '../../core/geo/local'
-import { gridStats, sampleBilinear, type HeightGrid } from '../../core/dem/grid'
+import { gridStats, sampleBilinear, sampleClamped, type HeightGrid } from '../../core/dem/grid'
 import { flatGrid } from '../../core/dem/plano'
 import { contourLevels, isolines } from '../../core/contours/isolines'
 import { preseleccionEquidistancia } from '../../core/contours/escala'
 import { computeEnvelope, GOV_MAX_HEIGHT, prepare } from '../../core/envelope/envelope'
 import { envelopeInputFor, lotFromDimensions, terrainAreaForLot } from '../../core/envelope/lote'
-import { area, facing, outwardNormal, toCCW } from '../../core/envelope/polygon'
+import { area, cleanRing, facing, outwardNormal, toCCW } from '../../core/envelope/polygon'
+import { clipIsolines } from '../../core/contours/clip'
 import { PERFILES, perfilVerificado, type EdgeRole } from '../../core/normativa/perfiles'
 import { sceneToDxf } from '../../core/export/sceneDxf'
 import { MapView } from '../../app/components/MapView'
@@ -17,14 +18,6 @@ import { btn, btnPrimary, input, ModulePanel, Note, Num, Section } from '../../a
 import { download, useEscape } from '../../app/util'
 import { edgeColor, exampleLot, fmt, MAX_HEIGHT_COLOR, ROLE_LABEL, TERRAIN_MODES, type MapMode, type TerrainMode } from '../../app/model'
 import { actions, gridCoversLot, useAppState } from '../../app/store'
-
-/** Quita vértices repetidos (el doble clic agrega dos clics extra en el mismo punto). */
-function cleanRing(pts: XY[], tol = 0.3): XY[] {
-  const out: XY[] = []
-  for (const p of pts) if (!out.length || Math.hypot(p.x - out[out.length - 1].x, p.y - out[out.length - 1].y) > tol) out.push(p)
-  while (out.length > 2 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].y - out[out.length - 1].y) <= tol) out.pop()
-  return out
-}
 
 /** Grilla sobre la que se calcula y dibuja el estudio: plana (cota 0) o el terreno del sitio si cubre el lote. */
 function useStudyGrid(terrainMode: TerrainMode, lot: XY[], dem: HeightGrid | null): HeightGrid | null {
@@ -61,6 +54,9 @@ export function SombrasModule() {
   const site = useAppState((s) => s.site)
   const terrain = useAppState((s) => s.terrain)
   const sombras = useAppState((s) => s.sombras)
+  const contexto = useAppState((s) => s.contexto)
+  const capas = useAppState((s) => s.capas)
+  const ctxDatos = contexto.estado === 'listo' ? contexto.datos : null
   const { terrainMode, lot, edges, maxHeight, didactic, exaggeration } = sombras
   const [mode, setMode] = useState<MapMode>('none')
   const [draft, setDraft] = useState<XY[]>([])
@@ -82,13 +78,16 @@ export function SombrasModule() {
   const envelope = useMemo(() => (envInput ? computeEnvelope(envInput) : undefined), [envInput])
   const envCtx = useMemo(() => (envInput ? prepare(envInput) : undefined), [envInput])
 
-  // curvas del terreno del sitio (equidistancia preseleccionada), como referencia en el mapa y en 3D
+  // curvas del terreno del sitio (equidistancia preseleccionada), como referencia en el mapa y en 3D; si el área de
+  // Curvas es un polígono, recortadas a él como allá
+  const areaPolygon = terrainMode === 'sitio' ? terrain.polygon : null
   const { contours, indexInterval } = useMemo(() => {
     if (terrainMode !== 'sitio' || !grid) return { contours: [], indexInterval: 25 }
     const { min, max } = gridStats(grid)
     const e = preseleccionEquidistancia(grid.meta, max - min).equidistancia
-    return { contours: isolines(grid, contourLevels(min, max, e)), indexInterval: 5 * e }
-  }, [terrainMode, grid])
+    const all = isolines(grid, contourLevels(min, max, e))
+    return { contours: areaPolygon ? clipIsolines(all, areaPolygon) : all, indexInterval: 5 * e }
+  }, [terrainMode, grid, areaPolygon])
 
   const cancel = useCallback(() => {
     setMode('none')
@@ -143,9 +142,12 @@ export function SombrasModule() {
       contours,
       indexInterval,
       area: sitio ? (terrain.area ?? undefined) : undefined,
+      areaPolygon,
       lot,
       lotZ: (p) => terrainFn(p.x, p.y),
       envelope,
+      contexto: ctxDatos,
+      cotaBase: grid ? (p) => sampleClamped(grid, p.x, p.y) : undefined,
     })
     download(`geoarc_sombras_${site.lat.toFixed(5)}_${site.lon.toFixed(5)}_UTM${frame.zone}${frame.south ? 'S' : 'N'}.dxf`, dxf, 'application/dxf')
   }
@@ -162,18 +164,16 @@ export function SombrasModule() {
         <Section n={2} title="Terreno" done={!!grid}>
           <div className="space-y-1" role="radiogroup" aria-label="Terreno del estudio">
             {TERRAIN_MODES.map((m) => (
-              <label key={m.id} className={`flex items-start gap-2 text-xs ${m.disabled ? 'text-slate-400' : 'text-slate-700'}`}>
+              <label key={m.id} className="flex items-start gap-2 text-xs text-slate-700">
                 <input
                   type="radio"
                   name="terreno"
                   className="mt-0.5"
                   checked={terrainMode === m.id}
-                  disabled={!!m.disabled}
                   onChange={() => void actions.setTerrainMode(m.id)}
                 />
                 <span>
                   <b className="font-medium">{m.label}</b>
-                  {m.disabled && <> — {m.disabled}</>}
                   <span className="block text-slate-500">{m.hint}</span>
                 </span>
               </label>
@@ -268,7 +268,7 @@ export function SombrasModule() {
                 <dt className="text-slate-500">Superficie lote</dt><dd className="text-right font-medium">{fmt(envelope.stats.lotArea)} m²</dd>
                 <dt className="text-slate-500">Huella edificable</dt><dd className="text-right font-medium">{fmt(envelope.stats.footprintArea)} m²</dd>
                 <dt className="text-slate-500">Volumen máx. envolvente</dt><dd className="text-right font-medium" data-testid="volume">{fmt(envelope.stats.volume, 0)} m³</dd>
-                <dt className="text-slate-500">Altura máx. alcanzable</dt><dd className="text-right font-medium" data-testid="altura-max">{fmt(envelope.stats.maxRel)} m</dd>
+                <dt className="text-slate-500">Altura máx. alcanzable</dt><dd className="text-right font-medium" data-testid="altura-max" title="Refinada bajo la celda de cálculo, al milímetro">{fmt(envelope.stats.maxRel, 2)} m</dd>
               </dl>
               <div>
                 <p className="mb-1 text-xs text-slate-500">¿Qué restricción manda en cada parte de la huella?</p>
@@ -293,6 +293,12 @@ export function SombrasModule() {
               <label className="flex items-center gap-1">
                 <input type="checkbox" checked={didactic} onChange={(e) => actions.setSombras({ didactic: e.target.checked })} /> Mostrar planos de rasante
               </label>
+              {!!ctxDatos?.edificaciones.length && (
+                <label className="flex items-center gap-1" title="Edificaciones de OpenStreetMap, extruidas con su altura (height, o 3 m por piso)">
+                  <input type="checkbox" checked={capas.edificaciones} onChange={(e) => actions.setCapas({ edificaciones: e.target.checked })} /> Edificaciones del
+                  contexto
+                </label>
+              )}
               <label className="flex items-center gap-1">
                 Exageración vertical
                 <select className="rounded border border-slate-300 px-1" value={exaggeration} onChange={(e) => actions.setSombras({ exaggeration: +e.target.value })}>
@@ -314,6 +320,7 @@ export function SombrasModule() {
             frame={frame}
             site={site}
             area={terrainMode === 'sitio' ? terrain.area : null}
+            areaPolygon={areaPolygon}
             areaCorner={null}
             loading={terrainMode === 'sitio' && terrain.status.state === 'loading'}
             contours={contours}
@@ -321,9 +328,11 @@ export function SombrasModule() {
             dataGrid={null}
             lot={lot}
             draft={draft}
+            contexto={ctxDatos}
+            capas={capas}
             mode={mode}
             onPick={onPick}
-            onFinishLot={finishLot}
+            onFinishDraft={finishLot}
             visible={view === 'mapa'}
           />
         </div>
@@ -340,6 +349,7 @@ export function SombrasModule() {
               selectedEdge={selectedEdge}
               exaggeration={exaggeration}
               visible={view === '3d'}
+              edificaciones={capas.edificaciones ? ctxDatos?.edificaciones : undefined}
             />
           </div>
         )}
