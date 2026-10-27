@@ -61,10 +61,17 @@ export function cleanRing(pts: XY[], tol = 0.3): XY[] {
 }
 
 export function bbox(poly: XY[]) {
-  return {
-    minX: Math.min(...poly.map((p) => p.x)),
-    maxX: Math.max(...poly.map((p) => p.x)),
-    minY: Math.min(...poly.map((p) => p.y)),
-    maxY: Math.max(...poly.map((p) => p.y)),
+  // Bucle explícito en vez de Math.min(...spread): el spread lanza RangeError con arreglos muy grandes
+  // (una curva densa o una vía de kilómetros) y esta función es alcanzable desde el contexto y el recorte.
+  let minX = Infinity
+  let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
+  for (const p of poly) {
+    if (p.x < minX) minX = p.x
+    if (p.x > maxX) maxX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.y > maxY) maxY = p.y
   }
+  return { minX, maxX, minY, maxY }
 }

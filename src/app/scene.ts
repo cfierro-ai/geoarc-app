@@ -32,14 +32,15 @@ interface SceneFileV3 extends Omit<SceneFileV2, 'version'> {
   terrainMode: TerrainMode
 }
 
-type LL = [number, number]
-
-/** Contexto en el archivo: lon/lat con 7 decimales (~1 cm), así no depende del marco local. */
+/**
+ * Contexto en el archivo: lon/lat con 7 decimales (~1 cm), así no depende del marco local. Usa objetos `LonLat` como
+ * el resto del formato (`areaLonLat`, `areaPolygonLonLat`): una sola codificación de lon/lat en el .geoarc v4.
+ */
 interface ContextoArchivo {
   fuente: Contexto['fuente']
   fecha: string
-  edificaciones: { id: string; anillo: LL[]; huecos: LL[][]; altura: number; alturaFuente: AlturaFuente }[]
-  vias: { id: string; linea: LL[]; clase: string }[]
+  edificaciones: { id: string; anillo: LonLat[]; huecos: LonLat[][]; altura: number; alturaFuente: AlturaFuente }[]
+  vias: { id: string; linea: LonLat[]; clase: string }[]
 }
 
 /**
@@ -53,9 +54,9 @@ export interface SceneFileV4 extends Omit<SceneFileV3, 'version'> {
 }
 
 function contextoAArchivo(c: Contexto, fr: LocalFrame): ContextoArchivo {
-  const ll = (p: XY): LL => {
+  const ll = (p: XY): LonLat => {
     const g = fr.toLonLat(p)
-    return [+g.lon.toFixed(7), +g.lat.toFixed(7)]
+    return { lon: +g.lon.toFixed(7), lat: +g.lat.toFixed(7) }
   }
   return {
     fuente: c.fuente,
@@ -66,7 +67,7 @@ function contextoAArchivo(c: Contexto, fr: LocalFrame): ContextoArchivo {
 }
 
 function contextoDesdeArchivo(c: ContextoArchivo, fr: LocalFrame): Contexto {
-  const xy = ([lon, lat]: LL) => fr.toLocal({ lon, lat })
+  const xy = (p: LonLat) => fr.toLocal(p)
   return {
     fuente: c.fuente,
     fecha: c.fecha,

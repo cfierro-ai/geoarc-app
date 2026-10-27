@@ -1,5 +1,5 @@
 import type { XY } from '../geo/local'
-import { bbox, pointInPolygon } from '../envelope/polygon'
+import { bbox, distToSegment, pointInPolygon } from '../envelope/polygon'
 import type { Isoline } from './isolines'
 
 /** Parámetros t ∈ (0, 1), ordenados, donde el tramo a→b cruza los lados del polígono. */
@@ -32,7 +32,12 @@ function clip(points: XY[], closed: boolean, poly: XY[]): { pieces: XY[][]; whol
   const n = points.length
   const segs = closed ? n : n - 1
   const pb = bbox(poly)
-  const inside = (p: XY) => p.x >= pb.minX && p.x <= pb.maxX && p.y >= pb.minY && p.y <= pb.maxY && pointInPolygon(p, poly)
+  // Un tramo colineal con un lado no genera cruce (den === 0 en crossings) y su punto medio cae sobre el borde,
+  // donde pointInPolygon es indefinido. Tratar «sobre el borde» como dentro vuelve determinista ese caso
+  // (y conserva, con razón, una curva que corre justo por un lado del polígono).
+  const onEdge = (p: XY) => poly.some((a, k) => distToSegment(p, a, poly[(k + 1) % poly.length]) <= 1e-9)
+  const inside = (p: XY) =>
+    (p.x >= pb.minX && p.x <= pb.maxX && p.y >= pb.minY && p.y <= pb.maxY && pointInPolygon(p, poly)) || onEdge(p)
   const pieces: XY[][] = []
   let cur: XY[] | null = null
   let firstIn = false

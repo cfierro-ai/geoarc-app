@@ -10,7 +10,7 @@ import type { Edificacion } from '../../core/contexto/contexto'
 import { isIndexLevel, type Isoline } from '../../core/contours/isolines'
 import type { EnvelopeResult, EnvelopeContext } from '../../core/envelope/envelope'
 import { GOV_MAX_HEIGHT } from '../../core/envelope/envelope'
-import { outwardNormal, toCCW } from '../../core/envelope/polygon'
+import { bbox, outwardNormal, toCCW } from '../../core/envelope/polygon'
 import { edgeColor, MAX_HEIGHT_COLOR } from '../model'
 
 interface Props {
@@ -231,8 +231,11 @@ function contextBuildings(edificaciones: Edificacion[], dem: HeightGrid, zRef: n
   const y1 = dem.y0 + (dem.ny - 1) * dem.cell
   const geoms: THREE.BufferGeometry[] = []
   for (const e of edificaciones) {
-    const c = e.anillo.reduce((s, q) => ({ x: s.x + q.x / e.anillo.length, y: s.y + q.y / e.anillo.length }), { x: 0, y: 0 })
-    if (c.x < dem.x0 || c.x > x1 || c.y < dem.y0 || c.y > y1) continue
+    // Incluir todo edificio cuya huella traslapa la grilla, no solo si su centroide cae dentro: uno pegado al lote
+    // con el centroide un metro afuera se veía en el mapa y en el DXF pero faltaba en el 3D. sampleClamped da cota a
+    // los vértices que queden fuera.
+    const b = bbox(e.anillo)
+    if (b.maxX < dem.x0 || b.minX > x1 || b.maxY < dem.y0 || b.minY > y1) continue
     const zs = e.anillo.map((q) => sampleClamped(dem, q.x, q.y)).filter(Number.isFinite)
     if (!zs.length) continue
     const shape = new THREE.Shape(e.anillo.map((q) => new THREE.Vector2(q.x, q.y)))

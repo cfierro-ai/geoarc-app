@@ -1,6 +1,6 @@
 import type { LocalFrame, XY } from '../geo/local'
 import type { Rect } from '../dem/area'
-import { bbox, pointInPolygon } from '../envelope/polygon'
+import { pointInPolygon } from '../envelope/polygon'
 import { clipPolyline } from '../contours/clip'
 
 /**
@@ -55,10 +55,10 @@ export function rectContexto(area: Rect, margen = MARGEN_CONTEXTO): Rect {
  */
 export function recortarContexto(c: Contexto, r: Rect): Contexto {
   const borde: XY[] = [{ x: r.minX, y: r.minY }, { x: r.maxX, y: r.minY }, { x: r.maxX, y: r.maxY }, { x: r.minX, y: r.maxY }]
-  const toca = (pts: XY[]) => {
-    const b = bbox(pts)
-    return b.maxX >= r.minX && b.minX <= r.maxX && b.maxY >= r.minY && b.minY <= r.maxY
-  }
+  // La huella toca el recuadro si recortarla a él deja algo (un vértice dentro o un lado que lo cruza) o si el
+  // recuadro queda contenido en ella. El traslape de bounding boxes dejaba pasar edificios en diagonal cuya caja
+  // roza una esquina sin que la huella entre.
+  const toca = (pts: XY[]) => clipPolyline(pts, true, borde).length > 0 || borde.some((c) => pointInPolygon(c, pts))
   const vias: Via[] = []
   for (const v of c.vias) {
     const tramos = clipPolyline(v.linea, false, borde).filter((t) => t.length > 1)
@@ -76,6 +76,9 @@ const numero = (s: string | undefined, entero: RegExp) => {
 export function alturaEdificacion(tags: Record<string, string>): { altura: number; fuente: AlturaFuente } {
   const h = numero(tags.height, /^\s*(\d+(?:[.,]\d+)?)\s*(?:m|metros?)?\s*$/i)
   if (h > 0) return { altura: h, fuente: 'height' }
+  // OSM también trae alturas en pies (p. ej. "82'" o "82 ft"); sin esto caían a building:levels o a 3 m.
+  const pies = numero(tags.height, /^\s*(\d+(?:[.,]\d+)?)\s*(?:'|ft|feet|pies?)/i)
+  if (pies > 0) return { altura: pies * 0.3048, fuente: 'height' }
   const n = numero(tags['building:levels'], /^\s*(\d+(?:[.,]\d+)?)/)
   if (n > 0) return { altura: n * ALTURA_PISO, fuente: 'pisos' }
   return { altura: ALTURA_PISO, fuente: 'defecto' }
@@ -166,11 +169,15 @@ export function contextoDesdeOverpass(r: OverpassRespuesta, frame: LocalFrame, f
       const rol = (role: string) => unirTramos(e.members!.filter((m) => m.role === role && m.geometry).map((m) => loc(m.geometry!))).map((c) => anillo(c)).filter((c): c is XY[] => !!c)
       const exteriores = rol('outer')
       const interiores = rol('inner')
+      // Cada patio se asigna a UN solo exterior: el primero que contiene su centroide (no su primer vértice, que puede
+      // caer sobre el borde y dar un resultado indefinido en pointInPolygon, perdiendo el patio o duplicándolo).
+      const centroide = (ring: XY[]) => ring.reduce((s, q) => ({ x: s.x + q.x / ring.length, y: s.y + q.y / ring.length }), { x: 0, y: 0 })
+      const huecosDe = (ext: XY[]) => interiores.filter((h) => exteriores.find((e2) => pointInPolygon(centroide(h), e2)) === ext)
       exteriores.forEach((ext, k) =>
         edificaciones.push({
           id: exteriores.length > 1 ? `r${e.id}-${k + 1}` : `r${e.id}`,
           anillo: ext,
-          huecos: interiores.filter((h) => pointInPolygon(h[0], ext)),
+          huecos: huecosDe(ext),
           ...alturaDe(tags),
         }),
       )
